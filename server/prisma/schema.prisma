@@ -1,0 +1,188 @@
+// This is your Prisma schema file for UbicaDog Enterprise Database
+// PostgreSQL with PostGIS extension for enterprise geospatial indexing (GIST)
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  USER
+  EMPLOYEE
+  ADMIN
+}
+
+enum Species {
+  DOG
+  CAT
+  OTHER
+}
+
+enum PetSize {
+  SMALL
+  MEDIUM
+  LARGE
+}
+
+enum CollarStatus {
+  WITH_COLLAR
+  NO_COLLAR
+  UNKNOWN
+}
+
+enum AnimalCondition {
+  HEALTHY
+  INJURED
+  SCARED
+  WANDERING
+}
+
+enum SightingStatus {
+  ACTIVE
+  RESOLVED
+  HIDDEN
+}
+
+enum SubscriptionTier {
+  FREE
+  PRO_OWNER
+  STORE_BASIC
+  STORE_PREMIUM
+}
+
+model User {
+  id               String           @id @default(uuid())
+  email            String           @unique
+  password         String?
+  name             String
+  role             Role             @default(USER)
+  phone            String?
+  avatarUrl        String?
+  googleId         String?          @unique
+  subscriptionTier SubscriptionTier @default(FREE)
+  pets             Pet[]
+  sightings        Sighting[]
+  stores           PetStore[]
+  subscriptions    Subscription[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([email])
+}
+
+model Subscription {
+  id                   String           @id @default(uuid())
+  userId               String
+  user                 User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tier                 SubscriptionTier @default(FREE)
+  status               String           @default("active")
+  stripeSubscriptionId String?
+  currentPeriodEnd     DateTime
+  priceClp             Int
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  @@index([userId])
+}
+
+model Pet {
+  id              String    @id @default(uuid())
+  ownerId         String
+  owner           User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name            String
+  species         Species   @default(DOG)
+  breed           String
+  age             Int?
+  size            PetSize   @default(MEDIUM)
+  color           String
+  microchipNumber String?   @unique
+  collarDetails   String?
+  photoUrl        String
+  homeLatitude    Float
+  homeLongitude   Float
+  homeAddress     String
+  isLost          Boolean   @default(false)
+  lostSince       DateTime?
+  description     String?
+  rewardAmount    Float?
+  qrCodeUrl       String?
+  vaccines        String[]  @default([])
+  allergies       String?
+  sterilized      Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([ownerId])
+  @@index([isLost])
+}
+
+model Sighting {
+  id           String          @id @default(uuid())
+  reporterId   String?
+  reporter     User?           @relation(fields: [reporterId], references: [id], onDelete: SetNull)
+  reporterName String?
+  species      Species         @default(DOG)
+  breed        String?
+  collarStatus CollarStatus    @default(UNKNOWN)
+  condition    AnimalCondition @default(WANDERING)
+  photoUrl     String
+  latitude     Float
+  longitude    Float
+  address      String?
+  seenAt       DateTime        @default(now())
+  notes        String?
+  contactPhone String?
+  status       SightingStatus  @default(ACTIVE)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([latitude, longitude])
+  @@index([status])
+}
+
+model Veterinary {
+  id             String   @id @default(uuid())
+  clinicName     String
+  address        String
+  latitude       Float
+  longitude      Float
+  phone          String
+  whatsapp       String?
+  rating         Float    @default(5.0)
+  reviewCount    Int      @default(0)
+  isEmergency24h Boolean  @default(false)
+  openingHours   String
+  photoUrl       String
+  services       String[] @default([])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([latitude, longitude])
+  @@index([rating])
+}
+
+model PetStore {
+  id           String           @id @default(uuid())
+  ownerId      String?
+  owner        User?            @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  businessName String
+  tier         SubscriptionTier @default(STORE_BASIC)
+  address      String
+  latitude     Float
+  longitude    Float
+  phone        String
+  whatsapp     String?
+  logoUrl      String
+  coverUrl     String?
+  description  String
+  openingHours String
+  websiteUrl   String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([latitude, longitude])
+}

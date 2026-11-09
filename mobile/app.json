@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "UbicaDog",
+    "slug": "ubicadog",
+    "version": "1.0.0",
+    "sdkVersion": "58.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#2563EB"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ubicadog.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "UbicaDog requiere acceso a tu ubicación para mostrar mascotas perdidas y reportar avistamientos en tu zona."
+      }
+    },
+    "android": {
+      "package": "com.ubicadog.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#2563EB"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
+    }
+  }
+}

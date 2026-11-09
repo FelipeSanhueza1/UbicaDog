@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: ubicadog_db
+    restart: always
+    environment:
+      POSTGRES_USER: ubicadog_user
+      POSTGRES_PASSWORD: ubicadog_password
+      POSTGRES_DB: ubicadog_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ubicadog_user -d ubicadog_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
