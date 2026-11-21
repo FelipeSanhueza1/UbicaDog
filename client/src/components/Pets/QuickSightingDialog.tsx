@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -15,13 +15,18 @@ import {
   Alert,
   IconButton,
   Chip,
+  Stack,
 } from '@mui/material';
 import {
   Close as CloseIcon,
-  AddPhotoAlternate as PhotoIcon,
+  PhotoCamera as CameraIcon,
+  Collections as GalleryIcon,
+  DeleteOutline as DeleteIcon,
+  Link as LinkIcon,
   MyLocation as GpsIcon,
   Send as SendIcon,
   Security as SecurityIcon,
+  AddPhotoAlternate as PhotoIcon,
 } from '@mui/icons-material';
 import { api } from '../../services/api';
 import { Species, CollarStatus, AnimalCondition } from '../../types';
@@ -43,9 +48,7 @@ export const QuickSightingDialog: React.FC<QuickSightingDialogProps> = ({
   const [collarStatus, setCollarStatus] = useState<CollarStatus>('unknown');
   const [condition, setCondition] = useState<AnimalCondition>('wandering');
   const [breed, setBreed] = useState('');
-  const [photoUrl, setPhotoUrl] = useState(
-    'https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=600&q=80'
-  );
+  const [photoUrl, setPhotoUrl] = useState('');
   const [address, setAddress] = useState('Av. Libertador Bernardo O Higgins 1400');
   const [lat, setLat] = useState(initialCoords?.lat || -33.444);
   const [lng, setLng] = useState(initialCoords?.lng || -70.655);
@@ -53,6 +56,37 @@ export const QuickSightingDialog: React.FC<QuickSightingDialogProps> = ({
   const [contactPhone, setContactPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const [imageProcessing, setImageProcessing] = useState(false);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 8 * 1024 * 1024) {
+      setError('La foto seleccionada supera los 8 MB. Por favor elige una imagen más liviana.');
+      return;
+    }
+
+    setImageProcessing(true);
+    setError(null);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (event.target?.result) {
+        setPhotoUrl(event.target.result as string);
+      }
+      setImageProcessing(false);
+    };
+    reader.onerror = () => {
+      setError('Error al procesar el archivo de imagen.');
+      setImageProcessing(false);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleUseCurrentLocation = () => {
     if (navigator.geolocation) {
@@ -75,12 +109,18 @@ export const QuickSightingDialog: React.FC<QuickSightingDialogProps> = ({
     setError(null);
 
     try {
+      const finalPhoto =
+        photoUrl ||
+        (species === 'cat'
+          ? 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?auto=format&fit=crop&w=600&q=80'
+          : 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=600&q=80');
+
       await api.post('/sightings', {
         species,
         collarStatus,
         condition,
         breed: breed || (species === 'dog' ? 'Perro callejero' : species === 'cat' ? 'Gato callejero' : 'Mascota'),
-        photoUrl,
+        photoUrl: finalPhoto,
         latitude: lat,
         longitude: lng,
         address,
@@ -191,37 +231,178 @@ export const QuickSightingDialog: React.FC<QuickSightingDialogProps> = ({
             </ToggleButton>
           </ToggleButtonGroup>
 
-          {/* 4. Photo URL & Preview */}
+          {/* Hidden file inputs for Camera and Gallery */}
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            ref={cameraInputRef}
+            style={{ display: 'none' }}
+            onChange={handleFileChange}
+          />
+          <input
+            type="file"
+            accept="image/*"
+            ref={galleryInputRef}
+            style={{ display: 'none' }}
+            onChange={handleFileChange}
+          />
+
+          {/* 4. Photo Section */}
           <Typography variant="subtitle2" fontWeight="700" gutterBottom>
             4. Foto de la mascota:
           </Typography>
-          <TextField
-            fullWidth
-            size="small"
-            placeholder="URL de la imagen o captura"
-            value={photoUrl}
-            onChange={(e) => setPhotoUrl(e.target.value)}
-            InputProps={{
-              startAdornment: <PhotoIcon sx={{ color: 'action.active', mr: 1 }} />,
-            }}
-            sx={{ mb: 1.5 }}
-          />
 
-          {photoUrl && (
+          {photoUrl ? (
+            /* Responsive Image Preview */
             <Box
-              component="img"
-              src={photoUrl}
-              alt="Preview"
               sx={{
+                position: 'relative',
                 width: '100%',
-                height: 140,
-                objectFit: 'cover',
-                borderRadius: 2,
-                mb: 2,
+                height: { xs: 220, sm: 280 },
+                backgroundColor: (theme) => (theme.palette.mode === 'dark' ? '#0f172a' : '#f1f5f9'),
+                borderRadius: 3,
+                overflow: 'hidden',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 border: '1px solid',
                 borderColor: 'divider',
+                mb: 2,
               }}
-            />
+            >
+              <Box
+                component="img"
+                src={photoUrl}
+                alt="Foto de la mascota vista"
+                sx={{
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  width: 'auto',
+                  height: 'auto',
+                  objectFit: 'contain',
+                }}
+              />
+              <Stack
+                direction="row"
+                spacing={1}
+                sx={{
+                  position: 'absolute',
+                  bottom: 12,
+                  right: 12,
+                }}
+              >
+                <Button
+                  size="small"
+                  variant="contained"
+                  color="primary"
+                  startIcon={<CameraIcon />}
+                  onClick={() => cameraInputRef.current?.click()}
+                  sx={{
+                    bgcolor: 'rgba(37, 99, 235, 0.9)',
+                    backdropFilter: 'blur(4px)',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                  }}
+                >
+                  Repetir Foto
+                </Button>
+                <IconButton
+                  size="small"
+                  onClick={() => setPhotoUrl('')}
+                  aria-label="Eliminar foto"
+                  sx={{
+                    bgcolor: 'rgba(239, 68, 68, 0.85)',
+                    color: 'white',
+                    '&:hover': { bgcolor: 'error.main' },
+                  }}
+                >
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </Stack>
+            </Box>
+          ) : (
+            /* Action Buttons to capture/upload */
+            <Box mb={2}>
+              {imageProcessing ? (
+                <Box
+                  display="flex"
+                  alignItems="center"
+                  justifyContent="center"
+                  gap={1.5}
+                  p={3}
+                  borderRadius={3}
+                  sx={{ bgcolor: 'action.hover' }}
+                >
+                  <CircularProgress size={24} />
+                  <Typography variant="body2" fontWeight="600">
+                    Procesando foto...
+                  </Typography>
+                </Box>
+              ) : (
+                <Grid container spacing={1.5}>
+                  <Grid item xs={12} sm={7}>
+                    <Button
+                      fullWidth
+                      variant="contained"
+                      color="secondary"
+                      size="large"
+                      startIcon={<CameraIcon />}
+                      onClick={() => cameraInputRef.current?.click()}
+                      sx={{
+                        py: 1.5,
+                        fontWeight: 800,
+                        fontSize: '0.95rem',
+                        boxShadow: '0 4px 14px rgba(249, 115, 22, 0.35)',
+                      }}
+                    >
+                      Tomar Foto con Cámara
+                    </Button>
+                  </Grid>
+                  <Grid item xs={12} sm={5}>
+                    <Button
+                      fullWidth
+                      variant="outlined"
+                      color="primary"
+                      size="large"
+                      startIcon={<GalleryIcon />}
+                      onClick={() => galleryInputRef.current?.click()}
+                      sx={{ py: 1.5, fontWeight: 700 }}
+                    >
+                      Subir de Galería
+                    </Button>
+                  </Grid>
+                </Grid>
+              )}
+
+              {/* Optional Web URL toggle */}
+              <Box mt={1} textAlign="right">
+                <Button
+                  size="small"
+                  variant="text"
+                  color="inherit"
+                  startIcon={<LinkIcon fontSize="small" />}
+                  onClick={() => setShowUrlInput(!showUrlInput)}
+                  sx={{ fontSize: '0.75rem', opacity: 0.8 }}
+                >
+                  {showUrlInput ? 'Ocultar campo de enlace' : '¿Tienes un enlace de imagen web?'}
+                </Button>
+              </Box>
+
+              {showUrlInput && (
+                <TextField
+                  fullWidth
+                  size="small"
+                  placeholder="https://ejemplo.com/foto-mascota.jpg"
+                  value={photoUrl}
+                  onChange={(e) => setPhotoUrl(e.target.value)}
+                  InputProps={{
+                    startAdornment: <PhotoIcon sx={{ color: 'action.active', mr: 1 }} />,
+                  }}
+                  sx={{ mt: 1 }}
+                />
+              )}
+            </Box>
           )}
 
           {/* 5. Location and Address */}

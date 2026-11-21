@@ -9,12 +9,16 @@ import {
   FormControlLabel,
   Switch,
   Divider,
+  IconButton,
+  Collapse,
 } from '@mui/material';
 import {
   AddLocationAlt as ReportIcon,
   Warning as WarningIcon,
   LocalHospital as VetIcon,
   Store as StoreIcon,
+  ExpandMore as ExpandMoreIcon,
+  ExpandLess as ExpandLessIcon,
 } from '@mui/icons-material';
 import { UbicaMap } from '../components/Map/UbicaMap';
 import { api } from '../services/api';
@@ -36,6 +40,7 @@ export const MapPage: React.FC<MapPageProps> = ({ onOpenQuickReport }) => {
 
   const [speciesFilter, setSpeciesFilter] = useState<'all' | 'dog' | 'cat' | 'other'>('all');
   const [collarFilter, setCollarFilter] = useState<'all' | 'with_collar' | 'no_collar'>('all');
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -86,110 +91,130 @@ export const MapPage: React.FC<MapPageProps> = ({ onOpenQuickReport }) => {
         stores={filteredStores}
       />
 
-      {/* Floating Control Overlay */}
+      {/* Floating Control Overlay - Positioned on Top Right to avoid blocking Leaflet zoom controls */}
       <Paper
         elevation={4}
         sx={{
           position: 'absolute',
-          top: 16,
-          left: 16,
+          top: { xs: 12, sm: 16 },
+          right: { xs: 12, sm: 16 },
+          left: 'auto',
           zIndex: 1000,
-          p: 2,
+          p: { xs: 1.5, sm: 2 },
           borderRadius: 3,
           backdropFilter: 'blur(10px)',
           backgroundColor: (theme) =>
             theme.palette.mode === 'dark' ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.94)',
-          maxWidth: 390,
+          maxWidth: { xs: 'calc(100vw - 24px)', sm: 360 },
+          width: { xs: 'calc(100vw - 24px)', sm: 360 },
+          transition: 'all 0.2s ease',
         }}
       >
-        <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" mb={panelCollapsed ? 0 : 1}>
           <Box display="flex" alignItems="center" gap={1}>
             <WarningIcon color="error" fontSize="small" />
             <Typography variant="subtitle2" fontWeight="800">
-              Radar UbicaDog en Vivo
+              Radar en Vivo
             </Typography>
           </Box>
-          <Chip
-            label={`${lostPets.length} Perdidos • ${sightings.length} Vistos`}
-            size="small"
-            color="error"
-            variant="outlined"
-            sx={{ fontWeight: 700 }}
-          />
+          <Box display="flex" alignItems="center" gap={0.5}>
+            <Chip
+              label={`${lostPets.length} Perdidos • ${sightings.length} Vistos`}
+              size="small"
+              color="error"
+              variant="outlined"
+              sx={{ fontWeight: 700, fontSize: '0.75rem' }}
+            />
+            <IconButton
+              size="small"
+              onClick={() => setPanelCollapsed(!panelCollapsed)}
+              aria-label={panelCollapsed ? 'Expandir panel de filtros' : 'Minimizar panel de filtros'}
+              sx={{ p: 0.5 }}
+            >
+              {panelCollapsed ? <ExpandMoreIcon fontSize="small" /> : <ExpandLessIcon fontSize="small" />}
+            </IconButton>
+          </Box>
         </Stack>
 
-        {/* Species Filters */}
-        <Stack direction="row" spacing={0.8} mb={1}>
-          <Chip
-            label="Todos"
-            size="small"
-            color={speciesFilter === 'all' ? 'primary' : 'default'}
-            onClick={() => setSpeciesFilter('all')}
-            clickable
-          />
-          <Chip
-            label="🐶 Perros"
-            size="small"
-            color={speciesFilter === 'dog' ? 'primary' : 'default'}
-            onClick={() => setSpeciesFilter('dog')}
-            clickable
-          />
-          <Chip
-            label="🐱 Gatos"
-            size="small"
-            color={speciesFilter === 'cat' ? 'primary' : 'default'}
-            onClick={() => setSpeciesFilter('cat')}
-            clickable
-          />
-        </Stack>
-
-        <Divider sx={{ my: 1 }} />
-
-        {/* Directory Toggles: Vets & Stores */}
-        <Typography variant="caption" fontWeight="800" color="text.secondary" display="block" mb={0.5}>
-          SERVICIOS EN EL MAPA:
-        </Typography>
-
-        <Stack direction="row" spacing={1} mb={1}>
-          <Chip
-            icon={<VetIcon />}
-            label="Veterinarias"
-            color={showVets ? 'success' : 'default'}
-            variant={showVets ? 'filled' : 'outlined'}
-            onClick={() => setShowVets(!showVets)}
-            clickable
-            size="small"
-            sx={{ fontWeight: 700 }}
-          />
-          <Chip
-            icon={<StoreIcon />}
-            label="Tiendas"
-            color={showStores ? 'primary' : 'default'}
-            variant={showStores ? 'filled' : 'outlined'}
-            onClick={() => setShowStores(!showStores)}
-            clickable
-            size="small"
-            sx={{ fontWeight: 700 }}
-          />
-        </Stack>
-
-        {showVets && (
-          <FormControlLabel
-            control={
-              <Switch
+        <Collapse in={!panelCollapsed}>
+          <Box pt={0.5}>
+            {/* Species Filters */}
+            <Typography variant="caption" fontWeight="800" color="text.secondary" display="block" mb={0.5}>
+              ESPECIES:
+            </Typography>
+            <Stack direction="row" spacing={0.8} mb={1}>
+              <Chip
+                label="Todos"
                 size="small"
-                checked={showOnlyEmergency}
-                onChange={(e) => setShowOnlyEmergency(e.target.checked)}
-                color="error"
+                color={speciesFilter === 'all' ? 'primary' : 'default'}
+                onClick={() => setSpeciesFilter('all')}
+                clickable
               />
-            }
-            label={
-              <Typography variant="caption" fontWeight="700" color="error.main">
-                Solo Urgencias 24 Horas
-              </Typography>
-            }
-          />
-        )}
+              <Chip
+                label="🐶 Perros"
+                size="small"
+                color={speciesFilter === 'dog' ? 'primary' : 'default'}
+                onClick={() => setSpeciesFilter('dog')}
+                clickable
+              />
+              <Chip
+                label="🐱 Gatos"
+                size="small"
+                color={speciesFilter === 'cat' ? 'primary' : 'default'}
+                onClick={() => setSpeciesFilter('cat')}
+                clickable
+              />
+            </Stack>
+
+            <Divider sx={{ my: 1 }} />
+
+            {/* Directory Toggles: Vets & Stores */}
+            <Typography variant="caption" fontWeight="800" color="text.secondary" display="block" mb={0.5}>
+              SERVICIOS EN EL MAPA:
+            </Typography>
+
+            <Stack direction="row" spacing={1} mb={1}>
+              <Chip
+                icon={<VetIcon />}
+                label="Veterinarias"
+                color={showVets ? 'success' : 'default'}
+                variant={showVets ? 'filled' : 'outlined'}
+                onClick={() => setShowVets(!showVets)}
+                clickable
+                size="small"
+                sx={{ fontWeight: 700 }}
+              />
+              <Chip
+                icon={<StoreIcon />}
+                label="Tiendas"
+                color={showStores ? 'primary' : 'default'}
+                variant={showStores ? 'filled' : 'outlined'}
+                onClick={() => setShowStores(!showStores)}
+                clickable
+                size="small"
+                sx={{ fontWeight: 700 }}
+              />
+            </Stack>
+
+            {showVets && (
+              <FormControlLabel
+                control={
+                  <Switch
+                    size="small"
+                    checked={showOnlyEmergency}
+                    onChange={(e) => setShowOnlyEmergency(e.target.checked)}
+                    color="error"
+                  />
+                }
+                label={
+                  <Typography variant="caption" fontWeight="700" color="error.main">
+                    Solo Urgencias 24 Horas
+                  </Typography>
+                }
+              />
+            )}
+          </Box>
+        </Collapse>
       </Paper>
 
       {/* Floating Bottom Action for Street Sighting */}
