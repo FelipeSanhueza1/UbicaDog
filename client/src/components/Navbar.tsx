@@ -36,6 +36,7 @@ import {
   Login as LoginIcon,
   Logout as LogoutIcon,
   GetApp as GetAppIcon,
+  Person as PersonIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -280,6 +281,9 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenQuickReport, activeLostCou
                       />
                     </Box>
                   </Box>
+                  <MenuItem onClick={() => { handleClose(); navigate('/profile'); }}>
+                    <PersonIcon fontSize="small" sx={{ mr: 1.5 }} /> Mi Perfil
+                  </MenuItem>
                   <MenuItem onClick={() => { handleClose(); navigate('/my-pets'); }}>
                     <PetsIcon fontSize="small" sx={{ mr: 1.5 }} /> Mis Mascotas
                   </MenuItem>
@@ -288,11 +292,11 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenQuickReport, activeLostCou
                   </MenuItem>
                   {isEmployeeOrAdmin && (
                     <MenuItem onClick={() => { handleClose(); navigate('/admin'); }}>
-                      <AdminIcon fontSize="small" sx={{ mr: 1.5 }} /> Panel Corporativo
+                      <AdminIcon fontSize="small" sx={{ mr: 1.5, color: 'primary.main' }} /> Panel de Administración
                     </MenuItem>
                   )}
                   <MenuItem onClick={() => { handleClose(); logout(); navigate('/'); }}>
-                    Cerrar Sesión
+                    <LogoutIcon fontSize="small" sx={{ mr: 1.5, color: 'error.main' }} /> Cerrar Sesión
                   </MenuItem>
                 </Menu>
               </Box>
@@ -306,16 +310,6 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenQuickReport, activeLostCou
                   sx={{ fontWeight: 600 }}
                 >
                   Ingresar
-                </Button>
-                <Button
-                  variant="text"
-                  color="inherit"
-                  onClick={() => navigate('/employee-login')}
-                  size="small"
-                  startIcon={<AdminIcon fontSize="small" />}
-                  sx={{ fontSize: '0.75rem', opacity: 0.8 }}
-                >
-                  Personal
                 </Button>
               </Box>
             )}
@@ -502,21 +496,39 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenQuickReport, activeLostCou
             </ListItem>
 
             {user && (
-              <ListItem disablePadding sx={{ mb: 0.5 }}>
-                <ListItemButton
-                  selected={location.pathname === '/my-pets'}
-                  onClick={() => handleNav('/my-pets')}
-                  sx={{ borderRadius: 2 }}
-                >
-                  <ListItemIcon sx={{ minWidth: 40, color: 'primary.main' }}>
-                    <PetsIcon />
-                  </ListItemIcon>
-                  <ListItemText
-                    primary="Mis Mascotas"
-                    primaryTypographyProps={{ fontWeight: location.pathname === '/my-pets' ? 800 : 600 }}
-                  />
-                </ListItemButton>
-              </ListItem>
+              <>
+                <ListItem disablePadding sx={{ mb: 0.5 }}>
+                  <ListItemButton
+                    selected={location.pathname === '/my-pets'}
+                    onClick={() => handleNav('/my-pets')}
+                    sx={{ borderRadius: 2 }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 40, color: 'primary.main' }}>
+                      <PetsIcon />
+                    </ListItemIcon>
+                    <ListItemText
+                      primary="Mis Mascotas"
+                      primaryTypographyProps={{ fontWeight: location.pathname === '/my-pets' ? 800 : 600 }}
+                    />
+                  </ListItemButton>
+                </ListItem>
+
+                <ListItem disablePadding sx={{ mb: 0.5 }}>
+                  <ListItemButton
+                    selected={location.pathname === '/profile'}
+                    onClick={() => handleNav('/profile')}
+                    sx={{ borderRadius: 2 }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 40, color: 'primary.main' }}>
+                      <PersonIcon />
+                    </ListItemIcon>
+                    <ListItemText
+                      primary="Mi Perfil"
+                      primaryTypographyProps={{ fontWeight: location.pathname === '/profile' ? 800 : 600 }}
+                    />
+                  </ListItemButton>
+                </ListItem>
+              </>
             )}
 
             {isEmployeeOrAdmin && (
@@ -597,7 +609,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenQuickReport, activeLostCou
             </ListItemButton>
           </ListItem>
 
-          {user ? (
+          {user && (
             <ListItem disablePadding sx={{ mt: 0.5 }}>
               <ListItemButton
                 onClick={() => {
@@ -610,18 +622,6 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenQuickReport, activeLostCou
                   <LogoutIcon />
                 </ListItemIcon>
                 <ListItemText primary="Cerrar Sesión" primaryTypographyProps={{ fontWeight: 700 }} />
-              </ListItemButton>
-            </ListItem>
-          ) : (
-            <ListItem disablePadding sx={{ mt: 0.5 }}>
-              <ListItemButton onClick={() => handleNav('/employee-login')} sx={{ borderRadius: 2 }}>
-                <ListItemIcon sx={{ minWidth: 40 }}>
-                  <AdminIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText
-                  primary="Acceso Personal / Veterinarias"
-                  primaryTypographyProps={{ variant: 'caption', color: 'text.secondary' }}
-                />
               </ListItemButton>
             </ListItem>
           )}

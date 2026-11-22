@@ -6,27 +6,20 @@ import {
   Typography,
   TextField,
   Button,
-  Divider,
   Alert,
   CircularProgress,
-  Stack,
   Link,
 } from '@mui/material';
-import {
-  Google as GoogleIcon,
-  Pets as PetIcon,
-  LockOutlined as LockIcon,
-  AdminPanelSettings as AdminIcon,
-} from '@mui/icons-material';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { Pets as PetIcon } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const { login, googleLogin } = useAuth();
+  const { login } = useAuth();
 
-  const [email, setEmail] = useState('usuario@gmail.com');
-  const [password, setPassword] = useState('usuario123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,23 +29,14 @@ export const LoginPage: React.FC = () => {
     setError(null);
 
     try {
-      await login(email, password);
-      navigate('/my-pets');
+      const loggedUser = await login(email.trim(), password);
+      if (loggedUser?.role === 'admin') {
+        navigate('/admin');
+      } else {
+        navigate('/my-pets');
+      }
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Error al iniciar sesión. Comprueba tus datos.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGoogleAuth = async () => {
-    setLoading(true);
-    try {
-      // In production, Google Identity Services client / Firebase is wired here:
-      await googleLogin('usuario.google@gmail.com', 'Usuario Google Autenticado', 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=256&q=80');
-      navigate('/my-pets');
-    } catch (err: any) {
-      setError('Error al autenticar con Google.');
+      setError(err.response?.data?.error || 'Error al iniciar sesión. Comprueba tus credenciales.');
     } finally {
       setLoading(false);
     }
@@ -82,7 +66,7 @@ export const LoginPage: React.FC = () => {
             Ingresar a UbicaDog
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Accede para registrar mascotas o activar alertas de búsqueda
+            Accede para registrar tus mascotas o gestionar tus alertas
           </Typography>
         </Box>
 
@@ -92,35 +76,6 @@ export const LoginPage: React.FC = () => {
           </Alert>
         )}
 
-        {/* Google Sign-In Button */}
-        <Button
-          fullWidth
-          variant="outlined"
-          size="large"
-          startIcon={<GoogleIcon />}
-          onClick={handleGoogleAuth}
-          disabled={loading}
-          sx={{
-            py: 1.2,
-            borderColor: 'divider',
-            color: 'text.primary',
-            fontWeight: 700,
-            mb: 2,
-            '&:hover': {
-              borderColor: 'primary.main',
-              backgroundColor: 'action.hover',
-            },
-          }}
-        >
-          Continuar con Google
-        </Button>
-
-        <Divider sx={{ my: 2 }}>
-          <Typography variant="caption" color="text.secondary">
-            O con tu correo electrónico
-          </Typography>
-        </Divider>
-
         <form onSubmit={handleSubmit}>
           <TextField
             fullWidth
@@ -129,6 +84,7 @@ export const LoginPage: React.FC = () => {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            autoComplete="email"
             sx={{ mb: 2 }}
           />
 
@@ -139,6 +95,7 @@ export const LoginPage: React.FC = () => {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            autoComplete="current-password"
             sx={{ mb: 2.5 }}
           />
 
@@ -149,7 +106,7 @@ export const LoginPage: React.FC = () => {
             color="primary"
             size="large"
             disabled={loading}
-            sx={{ py: 1.2, fontWeight: 700 }}
+            sx={{ py: 1.2, fontWeight: 700, minHeight: 44 }}
           >
             {loading ? <CircularProgress size={24} color="inherit" /> : 'Iniciar Sesión'}
           </Button>
@@ -167,21 +124,6 @@ export const LoginPage: React.FC = () => {
               Regístrate gratis
             </Link>
           </Typography>
-        </Box>
-
-        <Divider sx={{ my: 2.5 }} />
-
-        {/* Separate Employee Login Access */}
-        <Box textAlign="center">
-          <Button
-            size="small"
-            color="inherit"
-            startIcon={<AdminIcon fontSize="small" />}
-            onClick={() => navigate('/employee-login')}
-            sx={{ fontSize: '0.8rem', opacity: 0.85 }}
-          >
-            Acceso Exclusivo Personal y Empleados
-          </Button>
         </Box>
       </Paper>
     </Container>

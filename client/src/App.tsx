@@ -15,7 +15,7 @@ import { PricingPlansPage } from './pages/PricingPlansPage';
 import { PetPublicProfilePage } from './pages/PetPublicProfilePage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
-import { EmployeeLoginPage } from './pages/EmployeeLoginPage';
+import { ProfilePage } from './pages/ProfilePage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { Sighting } from './types';
 
@@ -30,7 +30,7 @@ const StaffRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
   if (loading) return null;
   if (!user || (user.role !== 'admin' && user.role !== 'employee')) {
-    return <Navigate to="/employee-login" replace />;
+    return <Navigate to="/login" replace />;
   }
   return <>{children}</>;
 };
@@ -68,9 +68,17 @@ function AppContent() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
-          <Route path="/employee-login" element={<EmployeeLoginPage />} />
+          <Route path="/employee-login" element={<Navigate to="/login" replace />} />
           <Route
             path="/admin"
             element={

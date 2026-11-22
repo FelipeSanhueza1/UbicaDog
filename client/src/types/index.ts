@@ -12,7 +12,11 @@ export interface User {
   role: Role;
   phone?: string;
   avatarUrl?: string;
+  homeAddress?: string;
+  homeLatitude?: number;
+  homeLongitude?: number;
   subscriptionTier: SubscriptionTier;
+  createdAt?: string;
 }
 
 export interface PetRadar {

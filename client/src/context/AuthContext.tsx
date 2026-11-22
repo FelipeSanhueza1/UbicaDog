@@ -5,10 +5,21 @@ import { api } from '../services/api';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string, recaptchaToken?: string) => Promise<void>;
+  login: (email: string, password: string, recaptchaToken?: string) => Promise<User>;
   employeeLogin: (email: string, password: string) => Promise<void>;
   googleLogin: (email: string, name?: string, avatarUrl?: string) => Promise<void>;
   register: (name: string, email: string, password: string, phone?: string, recaptchaToken?: string) => Promise<void>;
+  updateProfile: (profileData: {
+    name?: string;
+    email?: string;
+    phone?: string;
+    avatarUrl?: string;
+    homeAddress?: string;
+    homeLatitude?: number;
+    homeLongitude?: number;
+    currentPassword?: string;
+    newPassword?: string;
+  }) => Promise<User>;
   logout: () => void;
   refreshUser: () => Promise<void>;
 }
@@ -44,10 +55,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     refreshUser();
   }, []);
 
-  const login = async (email: string, password: string, recaptchaToken?: string) => {
+  const login = async (email: string, password: string, recaptchaToken?: string): Promise<User> => {
     const res = await api.post('/auth/login', { email, password, recaptchaToken });
     localStorage.setItem('ubicadog_token', res.data.token);
     setUser(res.data.user);
+    return res.data.user;
   };
 
   const employeeLogin = async (email: string, password: string) => {
@@ -74,6 +86,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(res.data.user);
   };
 
+  const updateProfile = async (profileData: {
+    name?: string;
+    email?: string;
+    phone?: string;
+    avatarUrl?: string;
+    homeAddress?: string;
+    homeLatitude?: number;
+    homeLongitude?: number;
+    currentPassword?: string;
+    newPassword?: string;
+  }): Promise<User> => {
+    const res = await api.put('/auth/profile', profileData);
+    if (res.data.token) {
+      localStorage.setItem('ubicadog_token', res.data.token);
+    }
+    setUser(res.data.user);
+    return res.data.user;
+  };
+
   const logout = () => {
     localStorage.removeItem('ubicadog_token');
     setUser(null);
@@ -88,6 +119,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         employeeLogin,
         googleLogin,
         register,
+        updateProfile,
         logout,
         refreshUser,
       }}

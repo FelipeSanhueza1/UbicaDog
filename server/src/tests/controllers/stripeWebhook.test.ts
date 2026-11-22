@@ -7,9 +7,19 @@ describe('Stripe Webhook Controller', () => {
   const testUserId = 'usr_regular';
 
   beforeEach(() => {
-    // Reset test user to free tier before each test
-    const user = store.users.find((u) => u.id === testUserId);
-    if (user) {
+    // Ensure test user exists and has free tier before each test
+    let user = store.users.find((u) => u.id === testUserId);
+    if (!user) {
+      user = {
+        id: testUserId,
+        email: 'test_regular@ubicadog.com',
+        name: 'Usuario Regular Test',
+        role: 'user',
+        subscriptionTier: 'free',
+        createdAt: new Date().toISOString(),
+      };
+      store.users.push(user);
+    } else {
       user.subscriptionTier = 'free';
     }
   });

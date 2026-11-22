@@ -28,6 +28,9 @@ export interface User {
   role: Role;
   phone?: string;
   avatarUrl?: string;
+  homeAddress?: string;
+  homeLatitude?: number;
+  homeLongitude?: number;
   googleId?: string;
   subscriptionTier: SubscriptionTier;
   createdAt: string;

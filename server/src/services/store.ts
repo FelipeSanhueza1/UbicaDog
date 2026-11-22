@@ -14,43 +14,20 @@ class DataStore {
   }
 
   private seedInitialData() {
-    const passwordHash = bcrypt.hashSync('admin123', 8);
-    const empHash = bcrypt.hashSync('empleado123', 8);
-    const userHash = bcrypt.hashSync('usuario123', 8);
+    const adminPassword = process.env.ADMIN_INITIAL_PASSWORD || 'UbicaDogAdmin2026!';
+    const adminHash = bcrypt.hashSync(adminPassword, 10);
 
-    // Initial Users
+    // Initial Users: ONLY Super Admin configured for secure administration & testing
     this.users = [
       {
         id: 'usr_admin',
-        email: 'admin@ubicadog.com',
-        password: passwordHash,
-        name: 'Administrador General',
+        email: process.env.ADMIN_EMAIL || 'admin@ubicadog.com',
+        password: adminHash,
+        name: 'Super Administrador UbicaDog',
         role: 'admin',
         phone: '+56912345678',
         avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80',
         subscriptionTier: 'pro_owner',
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: 'usr_employee',
-        email: 'empleado@ubicadog.com',
-        password: empHash,
-        name: 'Carlos Funcionario',
-        role: 'employee',
-        phone: '+56987654321',
-        avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=256&q=80',
-        subscriptionTier: 'pro_owner',
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: 'usr_regular',
-        email: 'usuario@gmail.com',
-        password: userHash,
-        name: 'Felipe Sanhueza',
-        role: 'user',
-        phone: '+56999887766',
-        avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=256&q=80',
-        subscriptionTier: 'free', // Free tier: max 1 pet allowed!
         createdAt: new Date().toISOString(),
       },
     ];
@@ -59,122 +36,9 @@ class DataStore {
     const baseLat = -33.4489;
     const baseLng = -70.6693;
 
-    // Seed Pets
-    const twoDaysAgo = new Date(Date.now() - 2.5 * 24 * 60 * 60 * 1000).toISOString();
-    const oneDayAgo = new Date(Date.now() - 1.2 * 24 * 60 * 60 * 1000).toISOString();
-
-    this.pets = [
-      {
-        id: 'pet_rocky',
-        ownerId: 'usr_regular',
-        name: 'Rocky',
-        species: 'dog',
-        breed: 'Golden Retriever',
-        age: 3,
-        size: 'large',
-        color: 'Dorado claro',
-        microchipNumber: '981098123456789',
-        collarDetails: 'Collar azul con placa metálica grabada y cascabel',
-        photoUrl: 'https://images.unsplash.com/photo-1552053831-71594a27632d?auto=format&fit=crop&w=600&q=80',
-        homeLatitude: baseLat + 0.005,
-        homeLongitude: baseLng - 0.008,
-        homeAddress: 'Av. Providencia 1240, Santiago',
-        isLost: true,
-        lostSince: twoDaysAgo,
-        lastSeenLatitude: baseLat + 0.005,
-        lastSeenLongitude: baseLng - 0.008,
-        description: 'Rocky es muy amigable pero se asusta con las bocinas. Responde a su nombre y le encanta el pan.',
-        rewardAmount: 100000,
-        medicalRecord: {
-          vaccines: ['Óctuple Canina al día (2025)', 'Antirrábica al día', 'KC Tos de las Perreras'],
-          allergies: 'Alérgico al pollo procesado',
-          sterilized: true,
-          notes: 'Requiere agua fresca constante.',
-        },
-        qrCodeUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=https://ubicadog.com/p/pet_rocky',
-        createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-      },
-      {
-        id: 'pet_luna',
-        ownerId: 'usr_admin',
-        name: 'Luna',
-        species: 'cat',
-        breed: 'Siamés',
-        age: 2,
-        size: 'small',
-        color: 'Blanco con orejas oscuras',
-        microchipNumber: '981098998877665',
-        collarDetails: 'Collar rojo antipulgas reflectante',
-        photoUrl: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?auto=format&fit=crop&w=600&q=80',
-        homeLatitude: baseLat - 0.003,
-        homeLongitude: baseLng + 0.004,
-        homeAddress: 'Calle Las Flores 450, Santiago',
-        isLost: false,
-        description: 'Gatita muy dócil, esterilizada. No acostumbra a salir a la calle.',
-        medicalRecord: {
-          vaccines: ['Triple Felina al día', 'Leucemia Negativa'],
-          sterilized: true,
-        },
-        qrCodeUrl: 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=https://ubicadog.com/p/pet_luna',
-        createdAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
-      },
-    ];
-
-    // Seed Street Sightings
-    this.sightings = [
-      {
-        id: 'sight_01',
-        reporterId: 'usr_regular',
-        reporterName: 'Vecino Vigilante',
-        species: 'dog',
-        breed: 'Mestizo mediano tipo pastor',
-        collarStatus: 'with_collar',
-        condition: 'wandering',
-        photoUrl: 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=600&q=80',
-        latitude: baseLat + 0.009,
-        longitude: baseLng - 0.004,
-        address: 'Plaza Italia esquina Baquedano',
-        seenAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-        notes: 'Llevaba un collar rojo desgastado sin placa visible. Cruzaba con miedo entre los autos.',
-        contactPhone: '+56988776655',
-        status: 'active',
-        createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-      },
-      {
-        id: 'sight_02',
-        reporterName: 'Mariana Gomez',
-        species: 'cat',
-        breed: 'Atigrado gris común',
-        collarStatus: 'no_collar',
-        condition: 'scared',
-        photoUrl: 'https://images.unsplash.com/photo-1533738363-b7f9aef128ce?auto=format&fit=crop&w=600&q=80',
-        latitude: baseLat - 0.008,
-        longitude: baseLng + 0.006,
-        address: 'Parque Bustamante altura 340',
-        seenAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-        notes: 'Refugiado bajo una banca cerca de los juegos infantiles. Maullaba con hambre.',
-        contactPhone: '+56977665544',
-        status: 'active',
-        createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-      },
-      {
-        id: 'sight_03',
-        reporterName: 'Carlos Delivery',
-        species: 'dog',
-        breed: 'Labrador mestizo negro',
-        collarStatus: 'unknown',
-        condition: 'healthy',
-        photoUrl: 'https://images.unsplash.com/photo-1587300003388-59208cc962cb?auto=format&fit=crop&w=600&q=80',
-        latitude: baseLat + 0.015,
-        longitude: baseLng - 0.012,
-        address: 'Costanera Andrés Bello con Huelén',
-        seenAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-        notes: 'Juguetón, seguía a varios ciclistas. Parecía desorientado pero bien alimentado.',
-        contactPhone: '+56966554433',
-        status: 'active',
-        createdAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-      },
-    ];
+    // Reset pets and street sightings for clean testing
+    this.pets = [];
+    this.sightings = [];
 
     // Seed Veterinaries (Ranked with diverse ratings and 24h emergency filters)
     this.veterinaries = [
