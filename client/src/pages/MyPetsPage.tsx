@@ -10,13 +10,14 @@ import {
   Paper,
   Stack,
 } from '@mui/material';
-import { Add as AddIcon, Pets as PetIcon, InfoOutlined as InfoIcon } from '@mui/icons-material';
+import { Add as AddIcon, Pets as PetIcon, InfoOutlined as InfoIcon, CloudOff as OfflineIcon } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { Pet } from '../types';
 import { LostPetRadiusCard } from '../components/Pets/LostPetRadiusCard';
 import { RegisterPetDialog } from '../components/Pets/RegisterPetDialog';
 import { StripeBoostModal } from '../components/Common/StripeBoostModal';
+import { saveOfflinePets, getOfflinePets } from '../services/offlineStorageService';
 
 export const MyPetsPage: React.FC = () => {
   const { user } = useAuth();
@@ -24,13 +25,22 @@ export const MyPetsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [registerOpen, setRegisterOpen] = useState(false);
   const [boostPet, setBoostPet] = useState<Pet | null>(null);
+  const [isOffline, setIsOffline] = useState<boolean>(!navigator.onLine);
 
   const fetchPets = async () => {
     try {
       const res = await api.get('/pets/my-pets');
-      setPets(res.data.pets || []);
+      const fetchedPets = res.data.pets || [];
+      setPets(fetchedPets);
+      saveOfflinePets(fetchedPets);
+      setIsOffline(false);
     } catch (err) {
-      console.error('Error fetching pets', err);
+      console.warn('Network error fetching pets, loading from offline cache', err);
+      const cached = getOfflinePets();
+      if (cached.length > 0) {
+        setPets(cached);
+        setIsOffline(true);
+      }
     } finally {
       setLoading(false);
     }
@@ -40,6 +50,21 @@ export const MyPetsPage: React.FC = () => {
     if (user) {
       fetchPets();
     }
+
+    const handleOnline = () => {
+      setIsOffline(false);
+      fetchPets();
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, [user]);
 
   return (
@@ -64,6 +89,17 @@ export const MyPetsPage: React.FC = () => {
           Registrar Nueva Mascota
         </Button>
       </Box>
+
+      {/* Offline Alert if working disconnected */}
+      {isOffline && (
+        <Alert
+          severity="warning"
+          icon={<OfflineIcon />}
+          sx={{ mb: 3, borderRadius: 2 }}
+        >
+          <strong>Modo Sin Conexión Activado:</strong> Estás consultando la copia local de tus mascotas y fichas médicas sincronizada en tu dispositivo. Puedes ver vacunas y números de microchip sin problemas en la clínica.
+        </Alert>
+      )}
 
       {/* Info notice about dynamic wander radius */}
       <Paper

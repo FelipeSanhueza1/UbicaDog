@@ -191,6 +191,26 @@ export const PetPublicProfilePage: React.FC = () => {
             >
               {gpsSent ? '✅ ¡Ubicación enviada al dueño!' : '📍 Enviar mi Ubicación GPS al Dueño'}
             </Button>
+
+            <Button
+              fullWidth
+              size="medium"
+              variant="outlined"
+              color="inherit"
+              startIcon={<ShareIcon />}
+              onClick={() => {
+                const currentUrl = window.location.href;
+                const text = `🚨 ¡Atención! Ficha de rescate de ${pet.name} en UbicaDog: ${currentUrl}`;
+                if (navigator.share) {
+                  navigator.share({ title: `UbicaDog: ${pet.name}`, text, url: currentUrl }).catch(() => {});
+                } else {
+                  window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+                }
+              }}
+              sx={{ fontWeight: 700, borderRadius: 2 }}
+            >
+              Compartir en Redes / WhatsApp
+            </Button>
           </Stack>
 
           <Divider sx={{ my: 2 }} />

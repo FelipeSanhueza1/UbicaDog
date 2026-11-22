@@ -9,9 +9,14 @@ import {
   Slide,
   SlideProps,
 } from '@mui/material';
-import { NotificationsActive as AlertIcon } from '@mui/icons-material';
+import { NotificationsActive as AlertIcon, Notifications as PushIcon } from '@mui/icons-material';
 import { socket } from '../../services/socket';
 import { RadarWaveAlert } from '../../types';
+import {
+  showBrowserNotification,
+  requestNotificationPermission,
+  getNotificationPermission,
+} from '../../services/notificationService';
 
 function SlideTransition(props: SlideProps) {
   return <Slide {...props} direction="down" />;
@@ -20,6 +25,12 @@ function SlideTransition(props: SlideProps) {
 export const ProximityAlertSnackbar: React.FC = () => {
   const [currentAlert, setCurrentAlert] = useState<RadarWaveAlert | null>(null);
   const [open, setOpen] = useState(false);
+  const [permission, setPermission] = useState<NotificationPermission>(getNotificationPermission());
+
+  const handleEnablePush = async () => {
+    const granted = await requestNotificationPermission();
+    setPermission(granted ? 'granted' : 'denied');
+  };
 
   const playChime = () => {
     try {
@@ -56,6 +67,10 @@ export const ProximityAlertSnackbar: React.FC = () => {
       setCurrentAlert(alertData);
       setOpen(true);
       playChime();
+      showBrowserNotification(alertData.title, {
+        body: alertData.message,
+        onClickUrl: '/',
+      });
     });
 
     socket.on('radar:proximity:alert', (data: any) => {
@@ -73,6 +88,10 @@ export const ProximityAlertSnackbar: React.FC = () => {
       setCurrentAlert(alertData);
       setOpen(true);
       playChime();
+      showBrowserNotification(alertData.title, {
+        body: alertData.message,
+        onClickUrl: '/',
+      });
     });
 
     return () => {
@@ -112,7 +131,23 @@ export const ProximityAlertSnackbar: React.FC = () => {
         <Typography variant="body2" sx={{ mb: 1 }}>
           {currentAlert.message}
         </Typography>
-        <Box display="flex" justifyContent="flex-end" gap={1}>
+        <Box display="flex" justifyContent="flex-end" alignItems="center" gap={1} flexWrap="wrap">
+          {permission === 'default' && (
+            <Button
+              size="small"
+              color="inherit"
+              variant="contained"
+              startIcon={<PushIcon />}
+              onClick={handleEnablePush}
+              sx={{
+                bgcolor: 'rgba(255,255,255,0.2)',
+                fontWeight: 700,
+                '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' },
+              }}
+            >
+              Activar Notificaciones
+            </Button>
+          )}
           <Button
             size="small"
             color="inherit"

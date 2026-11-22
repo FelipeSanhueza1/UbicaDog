@@ -232,3 +232,62 @@ export function getPublicPetProfile(req: Request, res: Response) {
     },
   });
 }
+
+/**
+ * Physical Security: High-Resolution Printable QR Collar Pass & Metal Engraving Kit
+ * Domain invariant: Restricted to paid subscribers (pro_owner, store_premium) or super admin
+ */
+export function getPetPrintablePass(req: AuthenticatedRequest, res: Response) {
+  if (!req.user) {
+    return res.status(401).json({ code: 'UNAUTHORIZED', error: 'No autenticado.' });
+  }
+
+  const { petId } = req.params;
+  const pet = store.pets.find((p) => p.id === petId);
+
+  if (!pet) {
+    return res.status(404).json({ code: 'NOT_FOUND', error: 'Mascota no encontrada.' });
+  }
+
+  if (pet.ownerId !== req.user.id && req.user.role !== 'admin') {
+    return res.status(403).json({ code: 'FORBIDDEN', error: 'No tienes permisos sobre esta mascota.' });
+  }
+
+  const userTier = req.user.subscriptionTier;
+  const isPaidSubscriber = userTier && userTier !== 'free';
+  const isAdmin = req.user.role === 'admin';
+
+  if (!isPaidSubscriber && !isAdmin) {
+    return res.status(403).json({
+      code: 'SUBSCRIPTION_LIMIT_REACHED',
+      error: 'La descarga e impresión del Kit Oficial de Placa QR requiere una suscripción Pro activa ($2.990 CLP/mes) o un Pase Individual de Placa ($2.990 CLP).',
+      requiresUpgrade: true,
+      priceClp: 2990,
+    });
+  }
+
+  const owner = store.users.find((u) => u.id === pet.ownerId);
+
+  return res.json({
+    authorized: true,
+    passKit: {
+      petId: pet.id,
+      petName: pet.name,
+      species: pet.species,
+      breed: pet.breed,
+      photoUrl: pet.photoUrl,
+      microchipNumber: pet.microchipNumber || 'No registrado',
+      qrCodeUrl: pet.qrCodeUrl,
+      publicUrl: `https://ubicadog.vercel.app/p/${pet.id}`,
+      emergencyContactName: owner?.name || 'Tutor',
+      emergencyPhone: owner?.phone || '+56 9 1234 5678',
+      medicalSummary: pet.medicalRecord?.allergies || 'Sin alergias registradas',
+      generatedAt: new Date().toISOString(),
+      dimensionsMm: {
+        collarPlate: '30mm x 30mm',
+        printableCard: '85mm x 54mm (ID-1 / Tarjeta estándar)',
+      },
+    },
+  });
+}
+

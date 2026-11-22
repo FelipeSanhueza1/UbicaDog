@@ -17,6 +17,8 @@ import {
   DialogActions,
   IconButton,
   CircularProgress,
+  Alert,
+  Tooltip,
 } from '@mui/material';
 import {
   Warning as WarningIcon,
@@ -27,9 +29,16 @@ import {
   QrCode2 as QrIcon,
   Close as CloseIcon,
   Print as PrintIcon,
+  Share as ShareIcon,
+  Lock as LockIcon,
+  LocalHospital as VetIcon,
+  Star as StarIcon,
+  ContentCopy as CopyIcon,
 } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 import { Pet } from '../../types';
 import { api } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 interface LostPetRadiusCardProps {
   pet: Pet;
@@ -42,8 +51,15 @@ export const LostPetRadiusCard: React.FC<LostPetRadiusCardProps> = ({
   onStatusToggled,
   onBoostClick,
 }) => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
   const [loading, setLoading] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
+  const [medicalOpen, setMedicalOpen] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  const isProOrAdmin = (user?.subscriptionTier && user.subscriptionTier !== 'free') || user?.role === 'admin';
 
   const handleToggle = async () => {
     setLoading(true);
@@ -54,6 +70,40 @@ export const LostPetRadiusCard: React.FC<LostPetRadiusCardProps> = ({
       console.error('Error toggling lost state', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Viral Sharing for Lost or Registered Pets
+  const handleShare = async () => {
+    const publicUrl = `${window.location.origin}/p/${pet.id}`;
+    const shareText = pet.isLost
+      ? `🚨 ¡URGENTE! Mi mascota ${pet.name} (${pet.breed}) se extravió cerca de ${pet.homeAddress || 'nuestro hogar'}. Por favor avísame si la ves o revisa su ficha aquí:`
+      : `🐾 Ficha oficial de ${pet.name} en UbicaDog:`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `UbicaDog: ${pet.name}`,
+          text: shareText,
+          url: publicUrl,
+        });
+        return;
+      } catch (err) {
+        // User dismissed share dialog
+      }
+    }
+
+    // Fallback: Open WhatsApp with prefilled message
+    const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(`${shareText} ${publicUrl}`)}`;
+    window.open(waUrl, '_blank');
+
+    // Also copy to clipboard for convenience
+    try {
+      await navigator.clipboard.writeText(`${shareText} ${publicUrl}`);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 3000);
+    } catch {
+      // Clipboard denied
     }
   };
 
@@ -161,14 +211,31 @@ export const LostPetRadiusCard: React.FC<LostPetRadiusCardProps> = ({
             </Box>
           )}
 
-          {/* Medical Record Preview */}
-          {pet.medicalRecord && (
-            <Box mt={1} p={1} bgcolor="action.hover" borderRadius={1.5}>
-              <Typography variant="caption" fontWeight="700" display="block" color="text.secondary">
-                🩺 Vacunas: {pet.medicalRecord.vaccines.join(', ') || 'Al día'}
+          {/* Medical Record Short Preview */}
+          <Box
+            display="flex"
+            justifyContent="space-between"
+            alignItems="center"
+            mt={1}
+            p={1}
+            bgcolor="action.hover"
+            borderRadius={1.5}
+          >
+            <Box overflow="hidden">
+              <Typography variant="caption" fontWeight="700" display="block" color="text.secondary" noWrap>
+                🩺 Microchip: {pet.microchipNumber || 'Sin chip'}
               </Typography>
             </Box>
-          )}
+            <Button
+              size="small"
+              variant="text"
+              startIcon={<VetIcon fontSize="small" />}
+              onClick={() => setMedicalOpen(true)}
+              sx={{ fontSize: '0.72rem', py: 0.2 }}
+            >
+              Ver Ficha
+            </Button>
+          </Box>
         </CardContent>
 
         <Divider />
@@ -199,6 +266,17 @@ export const LostPetRadiusCard: React.FC<LostPetRadiusCardProps> = ({
               Placa QR
             </Button>
 
+            <Button
+              fullWidth
+              variant="outlined"
+              color="inherit"
+              startIcon={<ShareIcon />}
+              onClick={handleShare}
+              sx={{ fontWeight: 700 }}
+            >
+              {copiedLink ? '¡Copiado!' : 'Compartir'}
+            </Button>
+
             {pet.isLost && (
               <Button
                 fullWidth
@@ -215,46 +293,247 @@ export const LostPetRadiusCard: React.FC<LostPetRadiusCardProps> = ({
         </CardActions>
       </Card>
 
-      {/* Smart QR Collar Dialog */}
-      <Dialog open={qrOpen} onClose={() => setQrOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
+      {/* Smart QR Collar Dialog (Physical Security - Monetized) */}
+      <Dialog
+        open={qrOpen}
+        onClose={() => setQrOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
         <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6" fontWeight="800">
-            Placa Inteligente QR para Collar
-          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <QrIcon color="primary" />
+            <Typography variant="h6" fontWeight="800">
+              Placa Inteligente QR
+            </Typography>
+          </Stack>
           <IconButton onClick={() => setQrOpen(false)} size="small">
             <CloseIcon />
           </IconButton>
         </DialogTitle>
-        <DialogContent dividers sx={{ textAlign: 'center', py: 3 }}>
-          <Typography variant="body2" color="text.secondary" paragraph>
-            Imprime o graba este código en la placa del collar de <strong>{pet.name}</strong>. Si alguien lo encuentra en la calle y lo escanea con la cámara de su celular, accederá a tu contacto directo y podrá enviarte su ubicación GPS con un toque.
-          </Typography>
+        <DialogContent dividers sx={{ textAlign: 'center', py: 2.5 }}>
+          {isProOrAdmin ? (
+            /* Paid Subscription / Super Admin: Full High-Res Printable Pass */
+            <Box>
+              <Chip
+                icon={<StarIcon sx={{ fontSize: '15px !important' }} />}
+                label="KIT PRO • DESCARGA Y GRABADO HABILITADO"
+                color="warning"
+                size="small"
+                sx={{ fontWeight: 800, mb: 2 }}
+              />
 
-          {pet.qrCodeUrl && (
-            <Box
-              component="img"
-              src={pet.qrCodeUrl}
-              alt="QR Code"
-              sx={{
-                width: 200,
-                height: 200,
-                borderRadius: 2,
-                p: 1.5,
-                bgcolor: 'white',
-                border: '2px solid #2563EB',
-                boxShadow: '0 4px 16px rgba(37,99,235,0.2)',
-                mb: 2,
+              <Typography variant="body2" color="text.secondary" paragraph>
+                Hoja oficial de grabado en metal e impresión plastificada para el collar de <strong>{pet.name}</strong>.
+              </Typography>
+
+              {/* Printable Collar Badge Template */}
+              <Box
+                sx={{
+                  border: '2px dashed #2563EB',
+                  borderRadius: 3,
+                  p: 2,
+                  bgcolor: 'white',
+                  color: '#1e293b',
+                  mb: 2,
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.06)',
+                }}
+              >
+                <Typography variant="caption" fontWeight="800" color="primary.main" display="block">
+                  🐾 UBICADOG • PLACA DE RESCATE
+                </Typography>
+
+                {pet.qrCodeUrl && (
+                  <Box
+                    component="img"
+                    src={pet.qrCodeUrl}
+                    alt="QR Code"
+                    sx={{
+                      width: 160,
+                      height: 160,
+                      my: 1,
+                      p: 1,
+                      border: '1px solid #cbd5e1',
+                      borderRadius: 2,
+                    }}
+                  />
+                )}
+
+                <Typography variant="subtitle2" fontWeight="900" color="black">
+                  {pet.name.toUpperCase()}
+                </Typography>
+                <Typography variant="caption" display="block" color="#64748b">
+                  Microchip: <strong>{pet.microchipNumber || 'Registrado'}</strong>
+                </Typography>
+                <Typography variant="caption" display="block" color="#2563EB" fontWeight="700">
+                  ESCANÉAME CON LA CÁMARA
+                </Typography>
+              </Box>
+
+              <Typography variant="caption" color="text.secondary" display="block">
+                Enlace público de rescate: <code>ubicadog.com/p/{pet.id}</code>
+              </Typography>
+            </Box>
+          ) : (
+            /* Free Tier: Monitized Pro Gate */
+            <Box py={1}>
+              <Box
+                sx={{
+                  width: 54,
+                  height: 54,
+                  borderRadius: '50%',
+                  bgcolor: 'warning.light',
+                  color: 'warning.dark',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  mb: 2,
+                }}
+              >
+                <LockIcon fontSize="medium" />
+              </Box>
+
+              <Typography variant="h6" fontWeight="800" gutterBottom>
+                Kit de Placa para Collar Imprimible
+              </Typography>
+
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                La descarga del archivo de alta resolución listo para grabar en placas metálicas o imprimir con corte para collar es un beneficio exclusivo del <strong>Plan Pro</strong>.
+              </Typography>
+
+              <Alert severity="info" sx={{ textAlign: 'left', mb: 2, borderRadius: 2 }}>
+                <Typography variant="caption" display="block">
+                  <strong>Incluido en Plan Pro:</strong>
+                  <br />• Descarga e impresión de placa QR de alta definición.
+                  <br />• Registro ilimitado de mascotas.
+                  <br />• Radio de búsqueda ampliado al doble (x2).
+                </Typography>
+              </Alert>
+
+              <Typography variant="subtitle1" fontWeight="800" color="primary.main">
+                Solo $2.990 CLP / mes
+              </Typography>
+              <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+                o Pase Individual de Placa por $2.990 CLP
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          {isProOrAdmin ? (
+            <Button
+              fullWidth
+              variant="contained"
+              color="primary"
+              startIcon={<PrintIcon />}
+              onClick={() => window.print()}
+              sx={{ fontWeight: 800, minHeight: 44 }}
+            >
+              Imprimir Kit de Placa y Credencial
+            </Button>
+          ) : (
+            <Button
+              fullWidth
+              variant="contained"
+              color="warning"
+              startIcon={<StarIcon />}
+              onClick={() => {
+                setQrOpen(false);
+                navigate('/pricing');
               }}
-            />
+              sx={{ fontWeight: 800, minHeight: 44 }}
+            >
+              Desbloquear con Plan Pro ($2.990 CLP)
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
+
+      {/* Medical Record Dialog (Offline Resilience) */}
+      <Dialog
+        open={medicalOpen}
+        onClose={() => setMedicalOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <VetIcon color="primary" />
+            <Typography variant="h6" fontWeight="800">
+              Ficha Médica: {pet.name}
+            </Typography>
+          </Stack>
+          <IconButton onClick={() => setMedicalOpen(false)} size="small">
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Box mb={2}>
+            <Typography variant="subtitle2" fontWeight="700" color="text.secondary">
+              Número de Microchip Nacional
+            </Typography>
+            <Typography variant="body1" fontWeight="800">
+              {pet.microchipNumber || 'No registrado aún'}
+            </Typography>
+          </Box>
+
+          <Box mb={2}>
+            <Typography variant="subtitle2" fontWeight="700" color="text.secondary">
+              Estado de Esterilización
+            </Typography>
+            <Typography variant="body1" fontWeight="600">
+              {pet.medicalRecord?.sterilized ? '✅ Esterilizado / Castrado' : '❌ No esterilizado'}
+            </Typography>
+          </Box>
+
+          <Box mb={2}>
+            <Typography variant="subtitle2" fontWeight="700" color="text.secondary">
+              Vacunas Registradas
+            </Typography>
+            {pet.medicalRecord?.vaccines && pet.medicalRecord.vaccines.length > 0 ? (
+              <Stack direction="row" spacing={0.5} flexWrap="wrap" gap={0.5} mt={0.5}>
+                {pet.medicalRecord.vaccines.map((vac, i) => (
+                  <Chip key={i} label={vac} size="small" color="primary" variant="outlined" />
+                ))}
+              </Stack>
+            ) : (
+              <Typography variant="body2" color="text.secondary">
+                Sin vacunas cargadas
+              </Typography>
+            )}
+          </Box>
+
+          <Box mb={2}>
+            <Typography variant="subtitle2" fontWeight="700" color="text.secondary">
+              Alergias o Cuidados Crónicos
+            </Typography>
+            <Typography variant="body2">
+              {pet.medicalRecord?.allergies || 'Ninguna alergia declarada.'}
+            </Typography>
+          </Box>
+
+          {pet.medicalRecord?.notes && (
+            <Box mb={1}>
+              <Typography variant="subtitle2" fontWeight="700" color="text.secondary">
+                Notas Médicas Veterinarias
+              </Typography>
+              <Typography variant="body2">
+                {pet.medicalRecord.notes}
+              </Typography>
+            </Box>
           )}
 
+          <Divider sx={{ my: 1.5 }} />
+
           <Typography variant="caption" color="text.secondary" display="block">
-            Enlace público directo: <code>ubicadog.com/p/{pet.id}</code>
+            ⚡ Esta ficha se sincroniza y almacena de forma segura en tu dispositivo para estar disponible incluso sin señal de Internet en la clínica veterinaria.
           </Typography>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button fullWidth variant="contained" startIcon={<PrintIcon />} onClick={() => window.print()}>
-            Imprimir Placa para Collar
+          <Button fullWidth variant="outlined" onClick={() => setMedicalOpen(false)}>
+            Cerrar Ficha
           </Button>
         </DialogActions>
       </Dialog>

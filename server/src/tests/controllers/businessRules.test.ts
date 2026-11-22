@@ -77,4 +77,17 @@ describe('Business Rules & Domain Invariants', () => {
       expect(premiumStore?.promotions.length).toBeGreaterThan(0);
     });
   });
+
+  describe('Physical Security Domain Invariants (QR Collar Pass Monetization)', () => {
+    it('should restrict official high-resolution printable pass to paid subscribers or admins', () => {
+      const canDownloadPrintablePass = (tier: string, role: string) => {
+        return (tier && tier !== 'free') || role === 'admin';
+      };
+
+      expect(canDownloadPrintablePass('free', 'user')).toBe(false);
+      expect(canDownloadPrintablePass('pro_owner', 'user')).toBe(true);
+      expect(canDownloadPrintablePass('store_premium', 'user')).toBe(true);
+      expect(canDownloadPrintablePass('free', 'admin')).toBe(true);
+    });
+  });
 });

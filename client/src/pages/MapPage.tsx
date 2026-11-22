@@ -32,7 +32,8 @@ import {
 import { UbicaMap } from '../components/Map/UbicaMap';
 import { api } from '../services/api';
 import { socket } from '../services/socket';
-import { searchPlaces, GeocodedPlace } from '../services/geoService';
+import { searchPlaces, GeocodedPlace, calculateDistanceKm } from '../services/geoService';
+import { useAuth } from '../context/AuthContext';
 import { Sighting, LostRadarPet, Veterinary, PetStore } from '../types';
 
 interface MapPageProps {
@@ -41,6 +42,7 @@ interface MapPageProps {
 }
 
 export const MapPage: React.FC<MapPageProps> = ({ onOpenQuickReport, lastReportedSighting }) => {
+  const { user } = useAuth();
   const [sightings, setSightings] = useState<Sighting[]>([]);
   const [lostPets, setLostPets] = useState<LostRadarPet[]>([]);
   const [veterinaries, setVeterinaries] = useState<Veterinary[]>([]);
@@ -52,6 +54,10 @@ export const MapPage: React.FC<MapPageProps> = ({ onOpenQuickReport, lastReporte
 
   const [speciesFilter, setSpeciesFilter] = useState<'all' | 'dog' | 'cat' | 'other'>('all');
   const [collarFilter, setCollarFilter] = useState<'all' | 'with_collar' | 'no_collar'>('all');
+  const [radarRadiusKm, setRadarRadiusKm] = useState<number | null>(null);
+  const [currentUserCoords, setCurrentUserCoords] = useState<{ lat: number; lng: number } | null>(
+    user?.homeLatitude && user?.homeLongitude ? { lat: user.homeLatitude, lng: user.homeLongitude } : null
+  );
   const [panelCollapsed, setPanelCollapsed] = useState(false);
 
   // Address and Commune Search
@@ -135,21 +141,42 @@ export const MapPage: React.FC<MapPageProps> = ({ onOpenQuickReport, lastReporte
   const filteredSightings = sightings.filter((s) => {
     if (speciesFilter !== 'all' && s.species !== speciesFilter) return false;
     if (collarFilter !== 'all' && s.collarStatus !== collarFilter) return false;
+    if (radarRadiusKm && currentUserCoords) {
+      const dist = calculateDistanceKm(currentUserCoords.lat, currentUserCoords.lng, s.latitude, s.longitude);
+      if (dist > radarRadiusKm) return false;
+    }
     return true;
   });
 
   const filteredLostPets = lostPets.filter((p) => {
     if (speciesFilter !== 'all' && p.species !== speciesFilter) return false;
+    if (radarRadiusKm && currentUserCoords) {
+      const dist = calculateDistanceKm(currentUserCoords.lat, currentUserCoords.lng, p.centerLatitude, p.centerLongitude);
+      if (dist > radarRadiusKm) return false;
+    }
     return true;
   });
 
   const filteredVets = showVets
-    ? showOnlyEmergency
-      ? veterinaries.filter((v) => v.isEmergency24h)
-      : veterinaries
+    ? veterinaries.filter((v) => {
+        if (showOnlyEmergency && !v.isEmergency24h) return false;
+        if (radarRadiusKm && currentUserCoords) {
+          const dist = calculateDistanceKm(currentUserCoords.lat, currentUserCoords.lng, v.latitude, v.longitude);
+          if (dist > radarRadiusKm) return false;
+        }
+        return true;
+      })
     : [];
 
-  const filteredStores = showStores ? stores : [];
+  const filteredStores = showStores
+    ? stores.filter((st) => {
+        if (radarRadiusKm && currentUserCoords) {
+          const dist = calculateDistanceKm(currentUserCoords.lat, currentUserCoords.lng, st.latitude, st.longitude);
+          if (dist > radarRadiusKm) return false;
+        }
+        return true;
+      })
+    : [];
 
   return (
     <Box sx={{ position: 'relative', width: '100%', height: 'calc(100vh - 65px)', overflow: 'hidden' }}>
@@ -159,6 +186,7 @@ export const MapPage: React.FC<MapPageProps> = ({ onOpenQuickReport, lastReporte
         veterinaries={filteredVets}
         stores={filteredStores}
         flyToCoords={flyToCoords}
+        onUserLocationFound={(lat, lng) => setCurrentUserCoords({ lat, lng })}
       />
 
       {/* Search Bar for Streets and Communes (Next to Leaflet zoom controls) */}
@@ -318,6 +346,31 @@ export const MapPage: React.FC<MapPageProps> = ({ onOpenQuickReport, lastReporte
                 onClick={() => setSpeciesFilter('cat')}
                 clickable
               />
+            </Stack>
+
+            {/* Radar Radius Filter */}
+            <Typography variant="caption" fontWeight="800" color="text.secondary" display="block" mb={0.5}>
+              RADIO DE BÚSQUEDA:
+            </Typography>
+            <Stack direction="row" spacing={0.6} mb={1} flexWrap="wrap" gap={0.5}>
+              {[
+                { label: 'Todos', value: null },
+                { label: '1 km', value: 1 },
+                { label: '3 km', value: 3 },
+                { label: '5 km', value: 5 },
+                { label: '10 km', value: 10 },
+              ].map((r) => (
+                <Chip
+                  key={r.label}
+                  label={r.label}
+                  size="small"
+                  color={radarRadiusKm === r.value ? 'error' : 'default'}
+                  variant={radarRadiusKm === r.value ? 'filled' : 'outlined'}
+                  onClick={() => setRadarRadiusKm(r.value)}
+                  clickable
+                  sx={{ fontWeight: 700, fontSize: '0.72rem' }}
+                />
+              ))}
             </Stack>
 
             <Divider sx={{ my: 1 }} />
