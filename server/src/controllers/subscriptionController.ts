@@ -113,6 +113,7 @@ export function subscribeToPlan(req: AuthenticatedRequest, res: Response) {
   };
 
   store.subscriptions.push(newSub);
+  store.save();
 
   return res.json({
     message: `¡Suscripción actualizada exitosamente a ${plan?.name}!`,

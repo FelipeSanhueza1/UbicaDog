@@ -106,6 +106,7 @@ export async function handleStripeWebhook(req: Request, res: Response) {
             priceClp: session.amount_total || (tier === 'pro_owner' ? 2990 : tier === 'store_basic' ? 5000 : 10000),
           };
           store.subscriptions.push(newSub);
+          store.save();
           console.log(`✅ Suscripción activada vía Stripe para usuario ${user.email} -> ${tier}`);
         }
       }
@@ -120,6 +121,7 @@ export async function handleStripeWebhook(req: Request, res: Response) {
         const user = store.users.find((u) => u.id === subRecord.userId);
         if (user) {
           user.subscriptionTier = 'free';
+          store.save();
           console.log(`ℹ️ Suscripción cancelada vía Stripe para ${user.email}, revertido a Free`);
         }
       }

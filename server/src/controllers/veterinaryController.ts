@@ -1,12 +1,14 @@
 import { Request, Response } from 'express';
 import { store } from '../services/store.js';
 import { calculateDistanceMeters } from '../services/geoService.js';
+import { fetchOsmVeterinaries } from '../services/osmService.js';
 
 /**
  * Controller for Veterinary Directory
- * Filters by proximity GPS and orders by Rating (5.0 to 1.0) or Distance
+ * Dynamically queries real OpenStreetMap clinics around user coordinates,
+ * merged with registered partner clinics and sorted by rating or distance.
  */
-export function getNearbyVeterinaries(req: Request, res: Response) {
+export async function getNearbyVeterinaries(req: Request, res: Response) {
   try {
     const lat = req.query.lat ? Number(req.query.lat) : -33.4489;
     const lng = req.query.lng ? Number(req.query.lng) : -70.6693;
@@ -17,50 +19,55 @@ export function getNearbyVeterinaries(req: Request, res: Response) {
 
     const radiusMeters = req.query.radiusMeters ? Number(req.query.radiusMeters) : 25000;
     const onlyEmergency24h = req.query.onlyEmergency24h === 'true';
-    const sortBy = (req.query.sortBy as string) || 'rating'; // 'rating' or 'distance'
+    const sortBy = (req.query.sortBy as string) || 'distance'; // Default to closest clinics
 
-    let list = store.veterinaries.map((v) => {
-      const distance = calculateDistanceMeters(lat, lng, v.latitude, v.longitude);
-      return {
-        ...v,
-        distanceMeters: distance,
-        formattedDistance:
-          distance >= 1000 ? `${(distance / 1000).toFixed(1)} km` : `${distance} m`,
-      };
-    });
+    // 1. Fetch real clinics from OpenStreetMap around the actual GPS coordinates
+    const osmClinics = await fetchOsmVeterinaries(lat, lng, radiusMeters);
 
-    // 1. Check if clinics exist within the user's requested radius
-    let isExpandedSearch = false;
-    let filteredList = list.filter((v) => v.distanceMeters <= radiusMeters);
+    // 2. Fetch locally stored partner clinics and calculate distance
+    const localClinics = store.veterinaries
+      .map((v) => {
+        const distance = calculateDistanceMeters(lat, lng, v.latitude, v.longitude);
+        return {
+          ...v,
+          distanceMeters: distance,
+          formattedDistance: distance >= 1000 ? `${(distance / 1000).toFixed(1)} km` : `${distance} m`,
+        };
+      })
+      .filter((v) => v.distanceMeters <= radiusMeters);
+
+    // 3. Deduplicate and merge
+    const clinicMap = new Map<string, any>();
+    for (const c of [...localClinics, ...osmClinics]) {
+      const key = `${c.clinicName.toLowerCase().trim()}_${c.latitude.toFixed(3)}`;
+      if (!clinicMap.has(key)) {
+        clinicMap.set(key, c);
+      }
+    }
+
+    let result = Array.from(clinicMap.values());
 
     if (onlyEmergency24h) {
-      filteredList = filteredList.filter((v) => v.isEmergency24h);
+      result = result.filter((v) => v.isEmergency24h);
     }
 
-    // If no clinics in immediate radius (e.g. testing from outside Santiago),
-    // provide closest available clinics rather than returning an empty screen
-    if (filteredList.length === 0) {
-      isExpandedSearch = true;
-      filteredList = onlyEmergency24h ? list.filter((v) => v.isEmergency24h) : list;
-    }
-
-    // 2. Sorting criterion: Highest rated to lowest (or distance)
+    // 4. Sort according to request: closest or highest rating
     if (sortBy === 'rating') {
-      filteredList.sort((a, b) => {
+      result.sort((a, b) => {
         if (b.rating !== a.rating) {
-          return b.rating - a.rating; // Highest rating first
+          return b.rating - a.rating;
         }
-        return b.reviewCount - a.reviewCount; // Secondary tie-breaker: review count
+        return b.reviewCount - a.reviewCount;
       });
     } else {
-      filteredList.sort((a, b) => a.distanceMeters - b.distanceMeters); // Closest first
+      result.sort((a, b) => (a.distanceMeters || 0) - (b.distanceMeters || 0));
     }
 
     return res.json({
-      count: filteredList.length,
+      count: result.length,
       userLocation: { lat, lng },
-      isExpandedSearch,
-      veterinaries: filteredList,
+      radiusMeters,
+      veterinaries: result,
     });
   } catch (error) {
     return res.status(500).json({ error: 'Error al consultar clínicas veterinarias.' });

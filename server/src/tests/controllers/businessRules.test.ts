@@ -8,7 +8,14 @@ describe('Business Rules & Domain Invariants', () => {
       const userLat = -33.4489;
       const userLng = -70.6693;
 
-      const sortedVets = [...store.veterinaries]
+      const sampleVets = [
+        { id: 'v1', clinicName: 'Vet A', rating: 4.5, reviewCount: 50, latitude: userLat, longitude: userLng, isEmergency24h: false },
+        { id: 'v2', clinicName: 'Vet B', rating: 4.9, reviewCount: 120, latitude: userLat, longitude: userLng, isEmergency24h: true },
+        { id: 'v3', clinicName: 'Vet C', rating: 4.9, reviewCount: 200, latitude: userLat, longitude: userLng, isEmergency24h: true },
+        { id: 'v4', clinicName: 'Vet D', rating: 3.8, reviewCount: 10, latitude: userLat, longitude: userLng, isEmergency24h: false },
+      ];
+
+      const sortedVets = [...sampleVets]
         .map((v) => ({
           ...v,
           dist: calculateDistanceMeters(userLat, userLng, v.latitude, v.longitude),
@@ -20,15 +27,21 @@ describe('Business Rules & Domain Invariants', () => {
           return b.reviewCount - a.reviewCount;
         });
 
-      // Highest rated clinic should be first
+      // Highest rated clinic with highest review count should be first
+      expect(sortedVets[0].id).toBe('v3');
       expect(sortedVets[0].rating).toBeGreaterThanOrEqual(sortedVets[1].rating);
-      // Last clinic should have the lowest rating in the seed
-      expect(sortedVets[sortedVets.length - 1].rating).toBeLessThan(sortedVets[0].rating);
+      // Last clinic should have the lowest rating
+      expect(sortedVets[sortedVets.length - 1].rating).toBe(3.8);
     });
 
     it('should correctly filter only 24-hour emergency hospitals', () => {
-      const emergencyVets = store.veterinaries.filter((v) => v.isEmergency24h);
-      expect(emergencyVets.length).toBeGreaterThan(0);
+      const sampleVets = [
+        { id: 'v1', isEmergency24h: true },
+        { id: 'v2', isEmergency24h: false },
+        { id: 'v3', isEmergency24h: true },
+      ];
+      const emergencyVets = sampleVets.filter((v) => v.isEmergency24h);
+      expect(emergencyVets.length).toBe(2);
       emergencyVets.forEach((v) => {
         expect(v.isEmergency24h).toBe(true);
       });

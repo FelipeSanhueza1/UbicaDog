@@ -28,13 +28,14 @@ import {
   ExpandLess as ExpandLessIcon,
   Search as SearchIcon,
   Close as ClearIcon,
+  Security as SecurityIcon,
 } from '@mui/icons-material';
 import { UbicaMap } from '../components/Map/UbicaMap';
 import { api } from '../services/api';
 import { socket } from '../services/socket';
 import { searchPlaces, GeocodedPlace, calculateDistanceKm } from '../services/geoService';
 import { useAuth } from '../context/AuthContext';
-import { Sighting, LostRadarPet, Veterinary, PetStore } from '../types';
+import { Sighting, LostRadarPet, Veterinary, PetStore, Pet } from '../types';
 
 interface MapPageProps {
   onOpenQuickReport: () => void;
@@ -47,6 +48,7 @@ export const MapPage: React.FC<MapPageProps> = ({ onOpenQuickReport, lastReporte
   const [lostPets, setLostPets] = useState<LostRadarPet[]>([]);
   const [veterinaries, setVeterinaries] = useState<Veterinary[]>([]);
   const [stores, setStores] = useState<PetStore[]>([]);
+  const [myPets, setMyPets] = useState<Pet[]>([]);
 
   const [showVets, setShowVets] = useState(true);
   const [showStores, setShowStores] = useState(true);
@@ -64,22 +66,62 @@ export const MapPage: React.FC<MapPageProps> = ({ onOpenQuickReport, lastReporte
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<GeocodedPlace[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [flyToCoords, setFlyToCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [flyToCoords, setFlyToCoords] = useState<{ lat: number; lng: number } | null>(
+    user?.homeLatitude && user?.homeLongitude ? { lat: user.homeLatitude, lng: user.homeLongitude } : null
+  );
+
+  const isProOrAdmin = (user?.subscriptionTier && user.subscriptionTier !== 'free') || user?.role === 'admin';
+  const protectedPets = myPets.filter((p) => isProOrAdmin || p.hasPurchasedPlate);
+  const homeLocation =
+    user?.homeLatitude && user?.homeLongitude
+      ? {
+          lat: user.homeLatitude,
+          lng: user.homeLongitude,
+          address: user.homeAddress || 'Tu Hogar Registrado',
+          safeRadiusMeters: 150,
+          isProtected: isProOrAdmin || protectedPets.length > 0,
+          protectedPets: protectedPets.map((p) => p.name),
+        }
+      : null;
 
   const fetchData = async () => {
     try {
-      const [sightingsRes, radarRes, vetsRes, storesRes] = await Promise.all([
+      const userLat = user?.homeLatitude || -33.4489;
+      const userLng = user?.homeLongitude || -70.6693;
+
+      const requests: Promise<any>[] = [
         api.get('/sightings'),
         api.get('/pets/radar-active'),
-        api.get('/veterinaries', { params: { sortBy: 'rating' } }),
+        api.get('/veterinaries', { params: { lat: userLat, lng: userLng, sortBy: 'distance' } }),
         api.get('/stores'),
-      ]);
+      ];
+
+      if (user) {
+        requests.push(api.get('/pets/my-pets').catch(() => ({ data: { pets: [] } })));
+      }
+
+      const [sightingsRes, radarRes, vetsRes, storesRes, myPetsRes] = await Promise.all(requests);
       setSightings(sightingsRes.data.sightings || []);
       setLostPets(radarRes.data.radarPets || []);
       setVeterinaries(vetsRes.data.veterinaries || []);
       setStores(storesRes.data.stores || []);
+      if (myPetsRes?.data?.pets) {
+        setMyPets(myPetsRes.data.pets);
+      }
     } catch (err) {
       console.error('Error fetching map data', err);
+    }
+  };
+
+  const handleUserLocationFound = async (lat: number, lng: number) => {
+    setCurrentUserCoords({ lat, lng });
+    try {
+      const res = await api.get('/veterinaries', { params: { lat, lng, sortBy: 'distance' } });
+      if (res.data?.veterinaries) {
+        setVeterinaries(res.data.veterinaries);
+      }
+    } catch (e) {
+      console.warn('Error reloading veterinaries around GPS', e);
     }
   };
 
@@ -185,9 +227,28 @@ export const MapPage: React.FC<MapPageProps> = ({ onOpenQuickReport, lastReporte
         lostPets={filteredLostPets}
         veterinaries={filteredVets}
         stores={filteredStores}
+        homeLocation={homeLocation}
         flyToCoords={flyToCoords}
-        onUserLocationFound={(lat, lng) => setCurrentUserCoords({ lat, lng })}
+        onUserLocationFound={handleUserLocationFound}
       />
+
+      {homeLocation && (
+        <Chip
+          icon={<SecurityIcon sx={{ fontSize: '15px !important' }} />}
+          label={homeLocation.isProtected ? "🛡️ Perímetro Seguro Activo (150m)" : "🏠 Hogar en Mapa"}
+          color={homeLocation.isProtected ? "success" : "default"}
+          size="small"
+          sx={{
+            position: 'absolute',
+            bottom: { xs: 80, sm: 24 },
+            left: { xs: 16, sm: 24 },
+            zIndex: 1000,
+            backdropFilter: 'blur(8px)',
+            boxShadow: 2,
+            fontWeight: 800,
+          }}
+        />
+      )}
 
       {/* Search Bar for Streets and Communes (Next to Leaflet zoom controls) */}
       <Box

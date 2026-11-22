@@ -48,6 +48,7 @@ export async function register(req: Request, res: Response) {
     };
 
     store.users.push(newUser);
+    store.save();
 
     // Send welcome & confirmation email asynchronously (does not block response)
     sendWelcomeEmail(newUser.email, newUser.name).catch((err) => {
@@ -161,6 +162,8 @@ export async function googleLogin(req: Request, res: Response) {
       if (avatarUrl && !user.avatarUrl) user.avatarUrl = avatarUrl;
     }
 
+    store.save();
+
     const token = generateToken(user);
     const { password: _, ...userWithoutPassword } = user;
 
@@ -243,6 +246,8 @@ export async function updateProfile(req: AuthenticatedRequest, res: Response) {
     if (homeAddress !== undefined) user.homeAddress = homeAddress;
     if (homeLatitude !== undefined) user.homeLatitude = Number(homeLatitude);
     if (homeLongitude !== undefined) user.homeLongitude = Number(homeLongitude);
+
+    store.save();
 
     const token = generateToken(user);
     const { password: _, ...userWithoutPassword } = user;

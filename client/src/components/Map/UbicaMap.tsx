@@ -36,17 +36,53 @@ import { Sighting, LostRadarPet, Veterinary, PetStore } from '../../types';
 import { getUserCoordinates } from '../../services/geoService';
 import { sendUserLocation } from '../../services/socket';
 
+export interface HomeLocationData {
+  lat: number;
+  lng: number;
+  address: string;
+  safeRadiusMeters?: number;
+  isProtected?: boolean;
+  protectedPets?: string[];
+}
+
 interface UbicaMapProps {
   sightings: Sighting[];
   lostPets: LostRadarPet[];
   veterinaries?: Veterinary[];
   stores?: PetStore[];
+  homeLocation?: HomeLocationData | null;
   onMapClick?: (lat: number, lng: number) => void;
   flyToCoords?: { lat: number; lng: number } | null;
   onUserLocationFound?: (lat: number, lng: number) => void;
 }
 
 // Custom DivIcons
+const createHomeIcon = (isProtected: boolean) => {
+  return L.divIcon({
+    className: 'home-pin',
+    html: `
+      <div style="
+        background-color: ${isProtected ? '#0D9488' : '#2563EB'};
+        width: 40px;
+        height: 40px;
+        border-radius: 50% 50% 50% 0;
+        transform: rotate(-45deg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 14px rgba(13, 148, 136, 0.45);
+        border: 2px solid white;
+      ">
+        <div style="transform: rotate(45deg); font-size: 20px;">
+          🏠
+        </div>
+      </div>
+    `,
+    iconSize: [40, 40],
+    iconAnchor: [20, 40],
+  });
+};
+
 const createLostPetRadarIcon = (photoUrl: string) => {
   return L.divIcon({
     className: 'radar-custom-marker',
@@ -245,12 +281,13 @@ export const UbicaMap: React.FC<UbicaMapProps> = ({
   lostPets,
   veterinaries = [],
   stores = [],
+  homeLocation,
   onMapClick,
   flyToCoords,
   onUserLocationFound,
 }) => {
-  const centerLat = -33.4489;
-  const centerLng = -70.6693;
+  const centerLat = homeLocation?.lat || -33.4489;
+  const centerLng = homeLocation?.lng || -70.6693;
 
   const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
@@ -278,7 +315,7 @@ export const UbicaMap: React.FC<UbicaMapProps> = ({
 
       <MapContainer
         center={[centerLat, centerLng]}
-        zoom={13}
+        zoom={homeLocation ? 15 : 13}
         scrollWheelZoom={true}
         style={{ width: '100%', height: '100%' }}
       >
@@ -290,6 +327,71 @@ export const UbicaMap: React.FC<UbicaMapProps> = ({
         <MapClickHandler onClick={onMapClick} />
         <MapFlyController flyToCoords={flyToCoords} />
         <LocateControl onLocate={handleLocationFound} onError={(msg) => setGpsError(msg)} />
+
+        {/* 0. HOME LOCATION & SAFE GEOFENCE PERIMETER */}
+        {homeLocation && (
+          <React.Fragment>
+            {homeLocation.isProtected && (
+              <Circle
+                center={[homeLocation.lat, homeLocation.lng]}
+                radius={homeLocation.safeRadiusMeters || 150}
+                pathOptions={{
+                  color: '#0D9488',
+                  fillColor: '#10B981',
+                  fillOpacity: 0.16,
+                  weight: 2.5,
+                  dashArray: '5, 5',
+                }}
+              />
+            )}
+            <Marker
+              position={[homeLocation.lat, homeLocation.lng]}
+              icon={createHomeIcon(Boolean(homeLocation.isProtected))}
+            >
+              <Popup>
+                <Box p={1} sx={{ minWidth: 220 }}>
+                  <Typography variant="subtitle1" fontWeight="800" color="primary.main">
+                    🏠 Tu Hogar
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+                    📍 {homeLocation.address}
+                  </Typography>
+                  {homeLocation.isProtected ? (
+                    <Box
+                      p={1}
+                      borderRadius={1.5}
+                      bgcolor="rgba(16, 185, 129, 0.1)"
+                      border="1px solid #10B981"
+                    >
+                      <Typography variant="caption" fontWeight="800" color="success.main" display="block">
+                        🛡️ Perímetro Seguro Activo (150 m)
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        {homeLocation.protectedPets && homeLocation.protectedPets.length > 0
+                          ? `Protegiendo a: ${homeLocation.protectedPets.join(', ')}`
+                          : 'Placa QR y collar vinculados con alerta de fuga perimetral.'}
+                      </Typography>
+                    </Box>
+                  ) : (
+                    <Box
+                      p={1}
+                      borderRadius={1.5}
+                      bgcolor="rgba(245, 158, 11, 0.1)"
+                      border="1px dashed #F59E0B"
+                    >
+                      <Typography variant="caption" fontWeight="700" color="warning.dark" display="block">
+                        🔒 Perímetro Seguro No Activado
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        Adquiere una Placa Oficial ($4.500 CLP) o activa el Plan Pro para visualizar el radio seguro de 150m y recibir alertas de escape si tu mascota sale de la zona.
+                      </Typography>
+                    </Box>
+                  )}
+                </Box>
+              </Popup>
+            </Marker>
+          </React.Fragment>
+        )}
 
         {/* CURRENT USER GPS POSITION MARKER */}
         {userPos && (

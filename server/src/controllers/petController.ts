@@ -109,6 +109,7 @@ export function registerPet(req: AuthenticatedRequest, res: Response) {
     };
 
     store.pets.push(newPet);
+    store.save();
 
     return res.status(201).json({
       message: 'Mascota registrada exitosamente.',
@@ -134,6 +135,7 @@ export function toggleLostStatus(req: AuthenticatedRequest, res: Response) {
   }
 
   pet.isLost = !pet.isLost;
+  store.save();
 
   if (pet.isLost) {
     pet.lostSince = new Date().toISOString();
@@ -256,13 +258,14 @@ export function getPetPrintablePass(req: AuthenticatedRequest, res: Response) {
   const userTier = req.user.subscriptionTier;
   const isPaidSubscriber = userTier && userTier !== 'free';
   const isAdmin = req.user.role === 'admin';
+  const hasPurchasedPlate = Boolean(pet.hasPurchasedPlate);
 
-  if (!isPaidSubscriber && !isAdmin) {
+  if (!isPaidSubscriber && !isAdmin && !hasPurchasedPlate) {
     return res.status(403).json({
       code: 'SUBSCRIPTION_LIMIT_REACHED',
-      error: 'La descarga e impresión del Kit Oficial de Placa QR requiere una suscripción Pro activa ($2.990 CLP/mes) o un Pase Individual de Placa ($2.990 CLP).',
+      error: 'La descarga e impresión del Kit Oficial de Placa QR requiere una suscripción Pro activa ($2.990 CLP/mes) o la compra de la Placa Oficial ($4.500 CLP).',
       requiresUpgrade: true,
-      priceClp: 2990,
+      priceClp: 4500,
     });
   }
 
@@ -288,6 +291,35 @@ export function getPetPrintablePass(req: AuthenticatedRequest, res: Response) {
         printableCard: '85mm x 54mm (ID-1 / Tarjeta estándar)',
       },
     },
+  });
+}
+
+/**
+ * Purchase an individual engraved QR plate for a single pet ($4.500 CLP)
+ */
+export async function purchasePetPlate(req: AuthenticatedRequest, res: Response) {
+  if (!req.user) {
+    return res.status(401).json({ code: 'UNAUTHORIZED', error: 'No autenticado.' });
+  }
+
+  const { petId } = req.params;
+  const pet = store.pets.find((p) => p.id === petId);
+
+  if (!pet) {
+    return res.status(404).json({ code: 'NOT_FOUND', error: 'Mascota no encontrada.' });
+  }
+
+  if (pet.ownerId !== req.user.id && req.user.role !== 'admin') {
+    return res.status(403).json({ code: 'FORBIDDEN', error: 'No tienes permisos sobre esta mascota.' });
+  }
+
+  pet.hasPurchasedPlate = true;
+  await store.save();
+
+  return res.json({
+    message: `¡Placa QR oficial activada para ${pet.name}!`,
+    priceClp: 4500,
+    pet,
   });
 }
 

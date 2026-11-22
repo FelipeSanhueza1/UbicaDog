@@ -77,6 +77,7 @@ export function createSighting(req: AuthenticatedRequest, res: Response) {
     };
 
     store.sightings.unshift(newSighting);
+    store.save();
 
     // Emit live radar wave pulse centered at sighting
     broadcastRadarWave({

@@ -53,6 +53,7 @@ export interface Pet {
   rewardAmount?: number;
   medicalRecord?: PetMedicalRecord;
   qrCodeUrl?: string;
+  hasPurchasedPlate?: boolean;
   radar?: PetRadar;
   createdAt: string;
 }

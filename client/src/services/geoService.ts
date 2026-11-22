@@ -90,32 +90,86 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string> 
 }
 
 /**
- * Search places, streets, and communes in Chile/Latin America
+ * Search places, streets, and communes in Chile with high precision for house numbers
  */
 export async function searchPlaces(query: string): Promise<GeocodedPlace[]> {
-  if (!query || query.trim().length < 3) return [];
+  if (!query || query.trim().length < 2) return [];
+
+  const rawQuery = query.trim();
+  const numberMatch = rawQuery.match(/\b\d+\b/);
+  const houseNumber = numberMatch ? numberMatch[0] : null;
 
   try {
-    const res = await fetch(
+    let res = await fetch(
       `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-        query.trim()
-      )}&countrycodes=cl&limit=5&addressdetails=1`,
+        rawQuery
+      )}&countrycodes=cl&limit=6&addressdetails=1`,
       {
         headers: {
           'Accept-Language': 'es',
+          'User-Agent': 'UbicaDogApp/1.0 (contacto@ubicadog.com)',
         },
       }
     );
 
-    if (!res.ok) return [];
-    const data = await res.json();
+    let data: any[] = res.ok ? await res.json() : [];
 
-    return data.map((item: any) => ({
-      displayName: item.display_name,
-      lat: parseFloat(item.lat),
-      lng: parseFloat(item.lon),
-      type: item.type,
-    }));
+    // Fallback if 0 results and a house number was included (retry with street/commune and attach number)
+    if (data.length === 0 && houseNumber) {
+      const strippedQuery = rawQuery
+        .replace(new RegExp(`\\b${houseNumber}\\b`, 'g'), '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (strippedQuery.length >= 3) {
+        res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+            strippedQuery
+          )}&countrycodes=cl&limit=6&addressdetails=1`,
+          {
+            headers: {
+              'Accept-Language': 'es',
+              'User-Agent': 'UbicaDogApp/1.0 (contacto@ubicadog.com)',
+            },
+          }
+        );
+        if (res.ok) {
+          data = await res.json();
+        }
+      }
+    }
+
+    return data.map((item: any) => {
+      const addr = item.address || {};
+      const road = addr.road || addr.pedestrian || addr.street || addr.residential || '';
+      const num = addr.house_number || houseNumber || '';
+      const suburb = addr.suburb || addr.neighbourhood || addr.quarter || '';
+      const city = addr.city || addr.town || addr.municipality || addr.county || '';
+      const state = addr.state || '';
+
+      let formattedTitle = '';
+      if (road) {
+        formattedTitle = num ? `${road} ${num}` : road;
+      } else {
+        formattedTitle = item.display_name.split(',')[0];
+        if (num && !formattedTitle.includes(num)) {
+          formattedTitle = `${formattedTitle} ${num}`;
+        }
+      }
+
+      const rawParts = [suburb, city, state].filter(
+        (p) => Boolean(p) && p !== road && !formattedTitle.includes(p)
+      );
+      const secondaryParts = Array.from(new Set(rawParts));
+      const cleanDisplayName =
+        secondaryParts.length > 0 ? `${formattedTitle}, ${secondaryParts.join(', ')}` : formattedTitle;
+
+      return {
+        displayName: cleanDisplayName,
+        lat: parseFloat(item.lat),
+        lng: parseFloat(item.lon),
+        type: item.type,
+      };
+    });
   } catch (error) {
     console.warn('Error in searchPlaces:', error);
     return [];

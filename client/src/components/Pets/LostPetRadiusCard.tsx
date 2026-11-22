@@ -34,6 +34,8 @@ import {
   LocalHospital as VetIcon,
   Star as StarIcon,
   ContentCopy as CopyIcon,
+  ShoppingCart as BuyIcon,
+  Security as SecurityIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { Pet } from '../../types';
@@ -60,6 +62,25 @@ export const LostPetRadiusCard: React.FC<LostPetRadiusCardProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
 
   const isProOrAdmin = (user?.subscriptionTier && user.subscriptionTier !== 'free') || user?.role === 'admin';
+  const [platePurchased, setPlatePurchased] = useState(Boolean(pet.hasPurchasedPlate));
+  const isUnlocked = isProOrAdmin || platePurchased;
+  const [buyingPlate, setBuyingPlate] = useState(false);
+  const [purchaseSuccessMsg, setPurchaseSuccessMsg] = useState<string | null>(null);
+
+  const handlePurchasePlate = async () => {
+    setBuyingPlate(true);
+    try {
+      await api.post(`/pets/${pet.id}/purchase-plate`);
+      setPlatePurchased(true);
+      pet.hasPurchasedPlate = true;
+      setPurchaseSuccessMsg(`¡Placa QR Oficial activada con éxito para ${pet.name}!`);
+      onStatusToggled?.();
+    } catch (err: any) {
+      alert(err?.response?.data?.error || 'No se pudo procesar la compra de la placa.');
+    } finally {
+      setBuyingPlate(false);
+    }
+  };
 
   const handleToggle = async () => {
     setLoading(true);
@@ -313,13 +334,19 @@ export const LostPetRadiusCard: React.FC<LostPetRadiusCardProps> = ({
           </IconButton>
         </DialogTitle>
         <DialogContent dividers sx={{ textAlign: 'center', py: 2.5 }}>
-          {isProOrAdmin ? (
-            /* Paid Subscription / Super Admin: Full High-Res Printable Pass */
+          {purchaseSuccessMsg && (
+            <Alert severity="success" sx={{ mb: 2, textAlign: 'left', borderRadius: 2 }}>
+              {purchaseSuccessMsg}
+            </Alert>
+          )}
+
+          {isUnlocked ? (
+            /* Paid Subscription or Plate Purchased: Full High-Res Printable Pass */
             <Box>
               <Chip
-                icon={<StarIcon sx={{ fontSize: '15px !important' }} />}
-                label="KIT PRO • DESCARGA Y GRABADO HABILITADO"
-                color="warning"
+                icon={platePurchased && !isProOrAdmin ? <SecurityIcon sx={{ fontSize: '15px !important' }} /> : <StarIcon sx={{ fontSize: '15px !important' }} />}
+                label={platePurchased && !isProOrAdmin ? "PLACA OFICIAL ACTIVA • PERÍMETRO PROTEGIDO" : "PLAN PRO • DESCARGA Y GRABADO HABILITADO"}
+                color={platePurchased && !isProOrAdmin ? "success" : "warning"}
                 size="small"
                 sx={{ fontWeight: 800, mb: 2 }}
               />
@@ -376,52 +403,104 @@ export const LostPetRadiusCard: React.FC<LostPetRadiusCardProps> = ({
               </Typography>
             </Box>
           ) : (
-            /* Free Tier: Monitized Pro Gate */
+            /* Free Tier: Choose between $4.500 CLP Single Plate or $2.990 CLP/mo Pro Plan */
             <Box py={1}>
               <Box
                 sx={{
-                  width: 54,
-                  height: 54,
+                  width: 52,
+                  height: 52,
                   borderRadius: '50%',
-                  bgcolor: 'warning.light',
-                  color: 'warning.dark',
+                  bgcolor: 'primary.light',
+                  color: 'primary.dark',
                   display: 'inline-flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  mb: 2,
+                  mb: 1.5,
                 }}
               >
-                <LockIcon fontSize="medium" />
+                <SecurityIcon fontSize="medium" />
               </Box>
 
               <Typography variant="h6" fontWeight="800" gutterBottom>
-                Kit de Placa para Collar Imprimible
+                Seguridad y Placa para Collar
               </Typography>
 
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                La descarga del archivo de alta resolución listo para grabar en placas metálicas o imprimir con corte para collar es un beneficio exclusivo del <strong>Plan Pro</strong>.
+                Protege a <strong>{pet.name}</strong> con su placa identificadora inteligente y activa el <strong>Perímetro Seguro de Hogar (150m)</strong> en el mapa.
               </Typography>
 
-              <Alert severity="info" sx={{ textAlign: 'left', mb: 2, borderRadius: 2 }}>
-                <Typography variant="caption" display="block">
-                  <strong>Incluido en Plan Pro:</strong>
-                  <br />• Descarga e impresión de placa QR de alta definición.
-                  <br />• Registro ilimitado de mascotas.
-                  <br />• Radio de búsqueda ampliado al doble (x2).
-                </Typography>
-              </Alert>
+              <Stack spacing={2} sx={{ textAlign: 'left', mt: 1 }}>
+                {/* Option 1: Buy Plate $4.500 CLP */}
+                <Box
+                  sx={{
+                    p: 2,
+                    borderRadius: 2.5,
+                    border: '2px solid',
+                    borderColor: 'primary.main',
+                    bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(37, 99, 235, 0.08)' : 'rgba(37, 99, 235, 0.04)',
+                  }}
+                >
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" mb={0.5}>
+                    <Typography variant="subtitle2" fontWeight="800" color="primary.main">
+                      Opción 1: Placa Oficial Grabada
+                    </Typography>
+                    <Chip label="$4.500 CLP" size="small" color="primary" sx={{ fontWeight: 800 }} />
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary" display="block" mb={1.5}>
+                    Pago único para {pet.name}. Incluye grabado metálico oficial, código QR permanente y perímetro seguro de 150m en el radar.
+                  </Typography>
+                  <Button
+                    fullWidth
+                    variant="contained"
+                    color="primary"
+                    startIcon={buyingPlate ? <CircularProgress size={16} color="inherit" /> : <BuyIcon />}
+                    onClick={handlePurchasePlate}
+                    disabled={buyingPlate}
+                    sx={{ fontWeight: 800, minHeight: 40 }}
+                  >
+                    {buyingPlate ? 'Procesando...' : 'Comprar Placa ($4.500 CLP)'}
+                  </Button>
+                </Box>
 
-              <Typography variant="subtitle1" fontWeight="800" color="primary.main">
-                Solo $2.990 CLP / mes
-              </Typography>
-              <Typography variant="caption" color="text.secondary" display="block" mb={1}>
-                o Pase Individual de Placa por $2.990 CLP
-              </Typography>
+                {/* Option 2: Pro Subscription $2.990 CLP */}
+                <Box
+                  sx={{
+                    p: 2,
+                    borderRadius: 2.5,
+                    border: '1px solid',
+                    borderColor: 'warning.main',
+                    bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(245, 158, 11, 0.08)' : 'rgba(245, 158, 11, 0.04)',
+                  }}
+                >
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" mb={0.5}>
+                    <Typography variant="subtitle2" fontWeight="800" color="warning.main">
+                      Opción 2: Suscripción UbicaDog Pro
+                    </Typography>
+                    <Chip label="$2.990 CLP/mes" size="small" color="warning" sx={{ fontWeight: 800 }} />
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary" display="block" mb={1.5}>
+                    Mascotas ilimitadas, kits de placa para todas tus mascotas, radio de búsqueda ampliado al doble (x2) y alertas prioritarias comunitarias.
+                  </Typography>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    color="warning"
+                    startIcon={<StarIcon />}
+                    onClick={() => {
+                      setQrOpen(false);
+                      navigate('/pricing');
+                    }}
+                    sx={{ fontWeight: 800, minHeight: 40 }}
+                  >
+                    Ver Plan Pro ($2.990 CLP)
+                  </Button>
+                </Box>
+              </Stack>
             </Box>
           )}
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          {isProOrAdmin ? (
+          {isUnlocked ? (
             <Button
               fullWidth
               variant="contained"
@@ -435,16 +514,12 @@ export const LostPetRadiusCard: React.FC<LostPetRadiusCardProps> = ({
           ) : (
             <Button
               fullWidth
-              variant="contained"
-              color="warning"
-              startIcon={<StarIcon />}
-              onClick={() => {
-                setQrOpen(false);
-                navigate('/pricing');
-              }}
-              sx={{ fontWeight: 800, minHeight: 44 }}
+              variant="text"
+              color="inherit"
+              onClick={() => setQrOpen(false)}
+              sx={{ minHeight: 44 }}
             >
-              Desbloquear con Plan Pro ($2.990 CLP)
+              Cerrar
             </Button>
           )}
         </DialogActions>
