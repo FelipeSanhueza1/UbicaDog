@@ -29,30 +29,38 @@ export function getNearbyVeterinaries(req: Request, res: Response) {
       };
     });
 
-    // 1. Proximity geofence filter
-    list = list.filter((v) => v.distanceMeters <= radiusMeters);
+    // 1. Check if clinics exist within the user's requested radius
+    let isExpandedSearch = false;
+    let filteredList = list.filter((v) => v.distanceMeters <= radiusMeters);
 
-    // 2. Emergency 24h filter
     if (onlyEmergency24h) {
-      list = list.filter((v) => v.isEmergency24h);
+      filteredList = filteredList.filter((v) => v.isEmergency24h);
     }
 
-    // 3. Sorting criterion: Highest rated to lowest (or distance)
+    // If no clinics in immediate radius (e.g. testing from outside Santiago),
+    // provide closest available clinics rather than returning an empty screen
+    if (filteredList.length === 0) {
+      isExpandedSearch = true;
+      filteredList = onlyEmergency24h ? list.filter((v) => v.isEmergency24h) : list;
+    }
+
+    // 2. Sorting criterion: Highest rated to lowest (or distance)
     if (sortBy === 'rating') {
-      list.sort((a, b) => {
+      filteredList.sort((a, b) => {
         if (b.rating !== a.rating) {
           return b.rating - a.rating; // Highest rating first
         }
         return b.reviewCount - a.reviewCount; // Secondary tie-breaker: review count
       });
     } else {
-      list.sort((a, b) => a.distanceMeters - b.distanceMeters); // Closest first
+      filteredList.sort((a, b) => a.distanceMeters - b.distanceMeters); // Closest first
     }
 
     return res.json({
-      count: list.length,
+      count: filteredList.length,
       userLocation: { lat, lng },
-      veterinaries: list,
+      isExpandedSearch,
+      veterinaries: filteredList,
     });
   } catch (error) {
     return res.status(500).json({ error: 'Error al consultar clínicas veterinarias.' });

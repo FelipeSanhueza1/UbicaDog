@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   AppBar,
   Toolbar,
@@ -35,6 +35,7 @@ import {
   Close as CloseIcon,
   Login as LoginIcon,
   Logout as LogoutIcon,
+  GetApp as GetAppIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -53,6 +54,30 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenQuickReport, activeLostCou
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallPWA = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const choiceResult = await deferredPrompt.userChoice;
+      if (choiceResult.outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    } else {
+      alert(
+        'Para instalar UbicaDog en tu celular:\n• En Safari (iPhone): Presiona el botón "Compartir" (ícono con flecha hacia arriba) y selecciona "Agregar a pantalla de inicio".\n• En Chrome (Android): Toca el menú de 3 puntos y presiona "Instalar aplicación".'
+      );
+    }
+  };
 
   const handleMenu = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -540,6 +565,29 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenQuickReport, activeLostCou
         {/* Drawer Bottom Actions */}
         <Box pt={2}>
           <Divider sx={{ mb: 2 }} />
+
+          <ListItem disablePadding sx={{ mb: 1 }}>
+            <ListItemButton
+              onClick={handleInstallPWA}
+              sx={{
+                borderRadius: 2,
+                bgcolor: 'action.hover',
+                border: '1px solid',
+                borderColor: 'divider',
+              }}
+            >
+              <ListItemIcon sx={{ minWidth: 40, color: 'primary.main' }}>
+                <GetAppIcon />
+              </ListItemIcon>
+              <ListItemText
+                primary="Instalar App en el Celular"
+                secondary="Abrir directo sin navegador"
+                primaryTypographyProps={{ fontWeight: 700, fontSize: '0.85rem' }}
+                secondaryTypographyProps={{ fontSize: '0.7rem' }}
+              />
+            </ListItemButton>
+          </ListItem>
+
           <ListItem disablePadding>
             <ListItemButton onClick={toggleTheme} sx={{ borderRadius: 2 }}>
               <ListItemIcon sx={{ minWidth: 40 }}>

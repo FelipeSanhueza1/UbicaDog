@@ -32,6 +32,10 @@ export function broadcastRadarWave(payload: {
   // Broadcast to all connected clients
   ioInstance.emit('radar:wave', payload);
 
+  if (payload.type === 'sighting' && payload.data) {
+    ioInstance.emit('sighting:new', payload.data);
+  }
+
   // Also check individual client proximities for selective high-priority alarms
   for (const [_, clientSocket] of ioInstance.sockets.sockets) {
     const loc = clientSocket.data.location;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -20,10 +20,14 @@ import {
   Home as HomeIcon,
   MyLocation as GpsIcon,
   Star as StarIcon,
+  PhotoCamera as CameraIcon,
+  Collections as GalleryIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../services/api';
 import { Species, PetSize } from '../../types';
+import { getUserCoordinates, reverseGeocode } from '../../services/geoService';
+import { compressImage } from '../../utils/imageCompressor';
 
 interface RegisterPetDialogProps {
   open: boolean;
@@ -54,16 +58,42 @@ export const RegisterPetDialog: React.FC<RegisterPetDialogProps> = ({
   const [vaccines, setVaccines] = useState('Antirrábica al día, Óctuple al día');
   const [allergies, setAllergies] = useState('');
   const [loading, setLoading] = useState(false);
+  const [locatingGps, setLocatingGps] = useState(false);
+  const [imageCompressing, setImageCompressing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [upgradeRequired, setUpgradeRequired] = useState(false);
 
-  const handleUseGPS = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition((pos) => {
-        setHomeLatitude(pos.coords.latitude);
-        setHomeLongitude(pos.coords.longitude);
-        setHomeAddress(`GPS (${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)})`);
-      });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleUseGPS = async () => {
+    setLocatingGps(true);
+    setError(null);
+    try {
+      const coords = await getUserCoordinates();
+      setHomeLatitude(coords.lat);
+      setHomeLongitude(coords.lng);
+      const street = await reverseGeocode(coords.lat, coords.lng);
+      setHomeAddress(street);
+    } catch (err: any) {
+      setError(err.message || 'No se pudo obtener la posición GPS.');
+    } finally {
+      setLocatingGps(false);
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImageCompressing(true);
+    setError(null);
+    try {
+      const compressed = await compressImage(file, { maxWidth: 1200, quality: 0.82 });
+      setPhotoUrl(compressed);
+    } catch (err: any) {
+      setError('Error al comprimir la foto seleccionada.');
+    } finally {
+      setImageCompressing(false);
     }
   };
 
@@ -232,15 +262,73 @@ export const RegisterPetDialog: React.FC<RegisterPetDialogProps> = ({
               />
             </Grid>
             <Grid item xs={12} sm={4}>
-              <Button fullWidth variant="outlined" startIcon={<GpsIcon />} onClick={handleUseGPS} sx={{ height: 54 }}>
-                Fijar Casa con GPS
+              <Button
+                fullWidth
+                variant="outlined"
+                startIcon={locatingGps ? <CircularProgress size={16} /> : <GpsIcon />}
+                disabled={locatingGps}
+                onClick={handleUseGPS}
+                sx={{ height: 54, fontWeight: 700 }}
+              >
+                {locatingGps ? 'Detectando...' : 'Fijar Casa con GPS'}
               </Button>
             </Grid>
           </Grid>
 
           <Typography variant="subtitle2" color="primary" fontWeight="700" gutterBottom>
-            Salud, Vacunas y Cuidados
+            Foto y Salud de la Mascota
           </Typography>
+
+          <input
+            type="file"
+            accept="image/*"
+            ref={fileInputRef}
+            style={{ display: 'none' }}
+            onChange={handleFileChange}
+          />
+
+          <Box mb={2}>
+            <Grid container spacing={2} alignItems="center">
+              <Grid item xs={12} sm={8}>
+                <TextField
+                  fullWidth
+                  label="URL o archivo de imagen"
+                  value={photoUrl.startsWith('data:') ? 'Foto cargada desde dispositivo (Comprimida)' : photoUrl}
+                  onChange={(e) => setPhotoUrl(e.target.value)}
+                />
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Button
+                  fullWidth
+                  variant="outlined"
+                  startIcon={imageCompressing ? <CircularProgress size={16} /> : <CameraIcon />}
+                  disabled={imageCompressing}
+                  onClick={() => fileInputRef.current?.click()}
+                  sx={{ height: 54, fontWeight: 700 }}
+                >
+                  {imageCompressing ? 'Comprimiendo...' : 'Subir Foto'}
+                </Button>
+              </Grid>
+            </Grid>
+
+            {photoUrl && (
+              <Box mt={1.5} display="flex" justifyContent="center">
+                <Box
+                  component="img"
+                  src={photoUrl}
+                  alt="Previsualización Mascota"
+                  sx={{
+                    maxHeight: 180,
+                    maxWidth: '100%',
+                    borderRadius: 2,
+                    objectFit: 'contain',
+                    border: '1px solid',
+                    borderColor: 'divider',
+                  }}
+                />
+              </Box>
+            )}
+          </Box>
 
           <Grid container spacing={2}>
             <Grid item xs={12} sm={6}>
@@ -259,14 +347,6 @@ export const RegisterPetDialog: React.FC<RegisterPetDialogProps> = ({
                 value={allergies}
                 onChange={(e) => setAllergies(e.target.value)}
                 placeholder="Ej. Alergia alimentaria, cardiopatía..."
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="URL de Foto de la mascota"
-                value={photoUrl}
-                onChange={(e) => setPhotoUrl(e.target.value)}
               />
             </Grid>
           </Grid>

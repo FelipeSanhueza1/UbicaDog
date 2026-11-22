@@ -1,0 +1,18 @@
+{
+  "name": "UbicaDog - Red Georreferenciada de Rescate Animal",
+  "short_name": "UbicaDog",
+  "description": "Comunidad georreferenciada en tiempo real para encontrar mascotas perdidas, reportar avistamientos callejeros y ubicar clínicas veterinarias de urgencia.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563EB",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

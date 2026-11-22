@@ -29,22 +29,27 @@ import {
   Star as StarIcon,
   AccessTime as TimeIcon,
   NearMe as DistIcon,
+  CheckCircle as CheckIcon,
 } from '@mui/icons-material';
 import { api } from '../services/api';
 import { Veterinary } from '../types';
+import { getUserCoordinates, reverseGeocode } from '../services/geoService';
 
 export const VeterinariesPage: React.FC = () => {
   const [veterinaries, setVeterinaries] = useState<Veterinary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [locatingGps, setLocatingGps] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'rating' | 'distance'>('rating');
   const [only24h, setOnly24h] = useState(false);
-  const [radiusKm, setRadiusKm] = useState(15);
+  const [radiusKm, setRadiusKm] = useState(25);
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number }>({
     lat: -33.4489,
     lng: -70.6693,
   });
+  const [userAddress, setUserAddress] = useState<string>('');
   const [gpsActive, setGpsActive] = useState(false);
+  const [isExpandedSearch, setIsExpandedSearch] = useState(false);
 
   const fetchVets = async () => {
     setLoading(true);
@@ -60,6 +65,7 @@ export const VeterinariesPage: React.FC = () => {
         },
       });
       setVeterinaries(res.data.veterinaries || []);
+      setIsExpandedSearch(Boolean(res.data.isExpandedSearch));
     } catch (err: any) {
       setError(err.response?.data?.error || 'Error de conexión al cargar clínicas veterinarias.');
     } finally {
@@ -67,17 +73,18 @@ export const VeterinariesPage: React.FC = () => {
     }
   };
 
-  const handleRequestGPS = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-          setGpsActive(true);
-        },
-        (err) => {
-          console.warn('GPS error, using default coordinates', err);
-        }
-      );
+  const handleRequestGPS = async () => {
+    setLocatingGps(true);
+    try {
+      const coords = await getUserCoordinates();
+      setUserCoords({ lat: coords.lat, lng: coords.lng });
+      setGpsActive(true);
+      const address = await reverseGeocode(coords.lat, coords.lng);
+      setUserAddress(address);
+    } catch (err: any) {
+      console.warn('GPS notice, using default coordinates', err.message);
+    } finally {
+      setLocatingGps(false);
     }
   };
 
@@ -103,18 +110,44 @@ export const VeterinariesPage: React.FC = () => {
           <Typography variant="body2" color="text.secondary">
             Encuentra las clínicas más cercanas ordenadas según su reputación y valoración de usuarios reales.
           </Typography>
+          <Box mt={1}>
+            <Chip
+              icon={gpsActive ? <CheckIcon fontSize="small" /> : <GpsIcon fontSize="small" />}
+              label={
+                gpsActive
+                  ? `📍 GPS Activo: ${userAddress || `${userCoords.lat.toFixed(3)}, ${userCoords.lng.toFixed(3)}`}`
+                  : '📍 Ubicación base (Santiago). Toca para detectar tu GPS real.'
+              }
+              color={gpsActive ? 'success' : 'default'}
+              variant={gpsActive ? 'filled' : 'outlined'}
+              onClick={handleRequestGPS}
+              sx={{ fontWeight: 600 }}
+            />
+          </Box>
         </Box>
 
         <Button
           variant={gpsActive ? 'contained' : 'outlined'}
           color="primary"
-          startIcon={<GpsIcon />}
+          startIcon={locatingGps ? <CircularProgress size={16} color="inherit" /> : <GpsIcon />}
+          disabled={locatingGps}
           onClick={handleRequestGPS}
           sx={{ fontWeight: 700 }}
         >
-          {gpsActive ? 'Ubicación GPS Actualizada' : 'Obtener mi Ubicación GPS'}
+          {locatingGps
+            ? 'Detectando GPS...'
+            : gpsActive
+            ? 'Actualizar mi Ubicación GPS'
+            : 'Obtener mi Ubicación GPS'}
         </Button>
       </Box>
+
+      {/* Expanded search notice */}
+      {isExpandedSearch && (
+        <Alert severity="info" sx={{ mb: 3, borderRadius: 2 }}>
+          No se encontraron clínicas en el radio estricto de {radiusKm} km de tu posición. Te mostramos las clínicas más cercanas a nivel regional ordenadas para que siempre tengas auxilio médico.
+        </Alert>
+      )}
 
       {/* Filter and Sorting Controls */}
       <Paper sx={{ p: 2.5, mb: 4, borderRadius: 3 }}>

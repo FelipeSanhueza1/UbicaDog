@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -29,12 +29,14 @@ import {
   AddPhotoAlternate as PhotoIcon,
 } from '@mui/icons-material';
 import { api } from '../../services/api';
-import { Species, CollarStatus, AnimalCondition } from '../../types';
+import { Species, CollarStatus, AnimalCondition, Sighting } from '../../types';
+import { compressImage } from '../../utils/imageCompressor';
+import { getUserCoordinates, reverseGeocode } from '../../services/geoService';
 
 interface QuickSightingDialogProps {
   open: boolean;
   onClose: () => void;
-  onSightingCreated: () => void;
+  onSightingCreated: (sighting?: Sighting) => void;
   initialCoords?: { lat: number; lng: number };
 }
 
@@ -49,12 +51,13 @@ export const QuickSightingDialog: React.FC<QuickSightingDialogProps> = ({
   const [condition, setCondition] = useState<AnimalCondition>('wandering');
   const [breed, setBreed] = useState('');
   const [photoUrl, setPhotoUrl] = useState('');
-  const [address, setAddress] = useState('Av. Libertador Bernardo O Higgins 1400');
-  const [lat, setLat] = useState(initialCoords?.lat || -33.444);
-  const [lng, setLng] = useState(initialCoords?.lng || -70.655);
+  const [address, setAddress] = useState('');
+  const [lat, setLat] = useState(initialCoords?.lat || -33.4489);
+  const [lng, setLng] = useState(initialCoords?.lng || -70.6693);
   const [notes, setNotes] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [loading, setLoading] = useState(false);
+  const [locatingGps, setLocatingGps] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -62,44 +65,43 @@ export const QuickSightingDialog: React.FC<QuickSightingDialogProps> = ({
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [imageProcessing, setImageProcessing] = useState(false);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUseCurrentLocation = async () => {
+    setLocatingGps(true);
+    setError(null);
+    try {
+      const coords = await getUserCoordinates();
+      setLat(coords.lat);
+      setLng(coords.lng);
+      const streetName = await reverseGeocode(coords.lat, coords.lng);
+      setAddress(streetName);
+    } catch (err: any) {
+      setError(err.message || 'No se pudo acceder al GPS.');
+    } finally {
+      setLocatingGps(false);
+    }
+  };
+
+  // Automatically attempt to locate when dialog opens if coordinates are not provided
+  useEffect(() => {
+    if (open && !initialCoords && !address) {
+      handleUseCurrentLocation();
+    }
+  }, [open]);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    if (file.size > 8 * 1024 * 1024) {
-      setError('La foto seleccionada supera los 8 MB. Por favor elige una imagen más liviana.');
-      return;
-    }
 
     setImageProcessing(true);
     setError(null);
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        setPhotoUrl(event.target.result as string);
-      }
+    try {
+      const compressed = await compressImage(file, { maxWidth: 1200, quality: 0.82 });
+      setPhotoUrl(compressed);
+    } catch (err: any) {
+      setError('Error al procesar y comprimir la imagen de la mascota.');
+    } finally {
       setImageProcessing(false);
-    };
-    reader.onerror = () => {
-      setError('Error al procesar el archivo de imagen.');
-      setImageProcessing(false);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleUseCurrentLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setLat(pos.coords.latitude);
-          setLng(pos.coords.longitude);
-          setAddress(`Ubicación GPS (${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)})`);
-        },
-        () => {
-          setError('No se pudo acceder a la geolocalización del dispositivo.');
-        }
-      );
     }
   };
 
@@ -115,7 +117,7 @@ export const QuickSightingDialog: React.FC<QuickSightingDialogProps> = ({
           ? 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?auto=format&fit=crop&w=600&q=80'
           : 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=600&q=80');
 
-      await api.post('/sightings', {
+      const res = await api.post('/sightings', {
         species,
         collarStatus,
         condition,
@@ -123,13 +125,13 @@ export const QuickSightingDialog: React.FC<QuickSightingDialogProps> = ({
         photoUrl: finalPhoto,
         latitude: lat,
         longitude: lng,
-        address,
+        address: address || 'Ubicación seleccionada en mapa',
         seenAt: new Date().toISOString(),
         notes,
         contactPhone,
       });
 
-      onSightingCreated();
+      onSightingCreated(res.data.sighting);
       onClose();
     } catch (err: any) {
       setError(err.response?.data?.error || 'Error al publicar avistamiento.');
@@ -423,11 +425,12 @@ export const QuickSightingDialog: React.FC<QuickSightingDialogProps> = ({
               <Button
                 fullWidth
                 variant="outlined"
-                startIcon={<GpsIcon />}
+                startIcon={locatingGps ? <CircularProgress size={16} /> : <GpsIcon />}
+                disabled={locatingGps}
                 onClick={handleUseCurrentLocation}
-                sx={{ height: 40 }}
+                sx={{ height: 40, fontWeight: 700 }}
               >
-                GPS
+                {locatingGps ? 'Buscando...' : 'GPS'}
               </Button>
             </Grid>
           </Grid>

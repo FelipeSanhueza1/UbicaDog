@@ -11,6 +11,13 @@ import {
   Divider,
   IconButton,
   Collapse,
+  TextField,
+  InputAdornment,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemText,
+  CircularProgress,
 } from '@mui/material';
 import {
   AddLocationAlt as ReportIcon,
@@ -19,16 +26,21 @@ import {
   Store as StoreIcon,
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
+  Search as SearchIcon,
+  Close as ClearIcon,
 } from '@mui/icons-material';
 import { UbicaMap } from '../components/Map/UbicaMap';
 import { api } from '../services/api';
+import { socket } from '../services/socket';
+import { searchPlaces, GeocodedPlace } from '../services/geoService';
 import { Sighting, LostRadarPet, Veterinary, PetStore } from '../types';
 
 interface MapPageProps {
   onOpenQuickReport: () => void;
+  lastReportedSighting?: Sighting | null;
 }
 
-export const MapPage: React.FC<MapPageProps> = ({ onOpenQuickReport }) => {
+export const MapPage: React.FC<MapPageProps> = ({ onOpenQuickReport, lastReportedSighting }) => {
   const [sightings, setSightings] = useState<Sighting[]>([]);
   const [lostPets, setLostPets] = useState<LostRadarPet[]>([]);
   const [veterinaries, setVeterinaries] = useState<Veterinary[]>([]);
@@ -41,6 +53,12 @@ export const MapPage: React.FC<MapPageProps> = ({ onOpenQuickReport }) => {
   const [speciesFilter, setSpeciesFilter] = useState<'all' | 'dog' | 'cat' | 'other'>('all');
   const [collarFilter, setCollarFilter] = useState<'all' | 'with_collar' | 'no_collar'>('all');
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+
+  // Address and Commune Search
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<GeocodedPlace[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [flyToCoords, setFlyToCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   const fetchData = async () => {
     try {
@@ -62,6 +80,57 @@ export const MapPage: React.FC<MapPageProps> = ({ onOpenQuickReport }) => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Real-time socket updates for immediate sightings and radar waves
+  useEffect(() => {
+    socket.on('sighting:new', (newSighting: Sighting) => {
+      setSightings((prev) => [newSighting, ...prev.filter((s) => s.id !== newSighting.id)]);
+    });
+
+    socket.on('radar:wave', (payload: any) => {
+      if (payload.type === 'sighting' && payload.data) {
+        setSightings((prev) => [payload.data, ...prev.filter((s) => s.id !== payload.data.id)]);
+      } else if (payload.type === 'lost_pet' && payload.data) {
+        setLostPets((prev) => [payload.data, ...prev.filter((p) => p.petId !== payload.data.petId)]);
+      }
+    });
+
+    return () => {
+      socket.off('sighting:new');
+      socket.off('radar:wave');
+    };
+  }, []);
+
+  // If a sighting was just submitted by the user in this session, inject immediately and fly to it
+  useEffect(() => {
+    if (lastReportedSighting) {
+      setSightings((prev) => [lastReportedSighting, ...prev.filter((s) => s.id !== lastReportedSighting.id)]);
+      setFlyToCoords({ lat: lastReportedSighting.latitude, lng: lastReportedSighting.longitude });
+    }
+  }, [lastReportedSighting]);
+
+  // Debounced search for streets and communes
+  useEffect(() => {
+    if (searchQuery.trim().length < 3) {
+      setSearchResults([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      const places = await searchPlaces(searchQuery);
+      setSearchResults(places);
+      setIsSearching(false);
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const handleSelectPlace = (place: GeocodedPlace) => {
+    setFlyToCoords({ lat: place.lat, lng: place.lng });
+    setSearchQuery(place.displayName.split(',')[0]);
+    setSearchResults([]);
+  };
 
   const filteredSightings = sightings.filter((s) => {
     if (speciesFilter !== 'all' && s.species !== speciesFilter) return false;
@@ -89,7 +158,92 @@ export const MapPage: React.FC<MapPageProps> = ({ onOpenQuickReport }) => {
         lostPets={filteredLostPets}
         veterinaries={filteredVets}
         stores={filteredStores}
+        flyToCoords={flyToCoords}
       />
+
+      {/* Search Bar for Streets and Communes (Next to Leaflet zoom controls) */}
+      <Box
+        sx={{
+          position: 'absolute',
+          top: { xs: 12, sm: 16 },
+          left: { xs: 58, sm: 66 },
+          zIndex: 1000,
+          width: { xs: 'calc(100vw - 230px)', sm: 280, md: 340 },
+          maxWidth: 360,
+        }}
+      >
+        <Paper
+          elevation={3}
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            p: '2px 8px',
+            borderRadius: 3,
+            backgroundColor: (theme) =>
+              theme.palette.mode === 'dark' ? 'rgba(17, 24, 39, 0.94)' : 'rgba(255, 255, 255, 0.94)',
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          <TextField
+            fullWidth
+            size="small"
+            placeholder="Buscar calle o comuna..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            variant="standard"
+            InputProps={{
+              disableUnderline: true,
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" sx={{ color: 'primary.main', mr: 0.5 }} />
+                </InputAdornment>
+              ),
+              endAdornment: (
+                <InputAdornment position="end">
+                  {isSearching ? (
+                    <CircularProgress size={16} />
+                  ) : searchQuery ? (
+                    <IconButton size="small" onClick={() => setSearchQuery('')}>
+                      <ClearIcon fontSize="small" />
+                    </IconButton>
+                  ) : null}
+                </InputAdornment>
+              ),
+              sx: { fontSize: '0.85rem' },
+            }}
+          />
+        </Paper>
+
+        {/* Search Results Dropdown */}
+        {searchResults.length > 0 && (
+          <Paper
+            elevation={4}
+            sx={{
+              mt: 0.5,
+              maxHeight: 220,
+              overflowY: 'auto',
+              borderRadius: 2,
+              backgroundColor: (theme) =>
+                theme.palette.mode === 'dark' ? 'rgba(17, 24, 39, 0.98)' : 'rgba(255, 255, 255, 0.98)',
+            }}
+          >
+            <List dense disablePadding>
+              {searchResults.map((place, idx) => (
+                <ListItem key={idx} disablePadding>
+                  <ListItemButton onClick={() => handleSelectPlace(place)}>
+                    <ListItemText
+                      primary={place.displayName.split(',')[0]}
+                      secondary={place.displayName.split(',').slice(1, 3).join(',')}
+                      primaryTypographyProps={{ fontWeight: 700, fontSize: '0.85rem' }}
+                      secondaryTypographyProps={{ fontSize: '0.72rem' }}
+                    />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+            </List>
+          </Paper>
+        )}
+      </Box>
 
       {/* Floating Control Overlay - Positioned on Top Right to avoid blocking Leaflet zoom controls */}
       <Paper

@@ -17,6 +17,7 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { EmployeeLoginPage } from './pages/EmployeeLoginPage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
+import { Sighting } from './types';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, loading } = useAuth();
@@ -36,6 +37,7 @@ const StaffRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 function AppContent() {
   const [quickReportOpen, setQuickReportOpen] = useState(false);
+  const [lastReportedSighting, setLastReportedSighting] = useState<Sighting | null>(null);
 
   return (
     <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
@@ -44,7 +46,15 @@ function AppContent() {
 
       <Box component="main" sx={{ flexGrow: 1 }}>
         <Routes>
-          <Route path="/" element={<MapPage onOpenQuickReport={() => setQuickReportOpen(true)} />} />
+          <Route
+            path="/"
+            element={
+              <MapPage
+                onOpenQuickReport={() => setQuickReportOpen(true)}
+                lastReportedSighting={lastReportedSighting}
+              />
+            }
+          />
           <Route path="/sightings" element={<SightingsPage onOpenQuickReport={() => setQuickReportOpen(true)} />} />
           <Route path="/veterinaries" element={<VeterinariesPage />} />
           <Route path="/pricing" element={<PricingPlansPage />} />
@@ -77,7 +87,11 @@ function AppContent() {
       <QuickSightingDialog
         open={quickReportOpen}
         onClose={() => setQuickReportOpen(false)}
-        onSightingCreated={() => {}}
+        onSightingCreated={(newSighting) => {
+          if (newSighting) {
+            setLastReportedSighting(newSighting);
+          }
+        }}
       />
     </Box>
   );

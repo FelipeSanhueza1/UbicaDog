@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   MapContainer,
   TileLayer,
@@ -21,6 +21,8 @@ import {
   Fab,
   Tooltip,
   Rating,
+  Snackbar,
+  Alert,
 } from '@mui/material';
 import {
   MyLocation as GpsIcon,
@@ -31,6 +33,8 @@ import {
   WhatsApp as WhatsAppIcon,
 } from '@mui/icons-material';
 import { Sighting, LostRadarPet, Veterinary, PetStore } from '../../types';
+import { getUserCoordinates } from '../../services/geoService';
+import { sendUserLocation } from '../../services/socket';
 
 interface UbicaMapProps {
   sightings: Sighting[];
@@ -38,6 +42,8 @@ interface UbicaMapProps {
   veterinaries?: Veterinary[];
   stores?: PetStore[];
   onMapClick?: (lat: number, lng: number) => void;
+  flyToCoords?: { lat: number; lng: number } | null;
+  onUserLocationFound?: (lat: number, lng: number) => void;
 }
 
 // Custom DivIcons
@@ -139,6 +145,37 @@ const createStoreIcon = (isPremium: boolean) => {
   });
 };
 
+const createUserLocationIcon = () => {
+  return L.divIcon({
+    className: 'user-location-marker',
+    html: `
+      <div style="position: relative; width: 28px; height: 28px;">
+        <div style="
+          position: absolute;
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          background-color: rgba(37, 99, 235, 0.35);
+          animation: radarPulse 2s ease-out infinite;
+        "></div>
+        <div style="
+          position: absolute;
+          top: 5px;
+          left: 5px;
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background-color: #2563EB;
+          border: 3px solid white;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+        "></div>
+      </div>
+    `,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  });
+};
+
 function MapClickHandler({ onClick }: { onClick?: (lat: number, lng: number) => void }) {
   useMapEvents({
     click(e) {
@@ -150,18 +187,52 @@ function MapClickHandler({ onClick }: { onClick?: (lat: number, lng: number) => 
   return null;
 }
 
-function LocateControl() {
+function MapFlyController({ flyToCoords }: { flyToCoords?: { lat: number; lng: number } | null }) {
   const map = useMap();
-  const handleLocate = () => {
-    map.locate().on('locationfound', (e) => {
-      map.flyTo(e.latlng, 14);
-    });
+  useEffect(() => {
+    if (flyToCoords) {
+      map.flyTo([flyToCoords.lat, flyToCoords.lng], 15, { duration: 1.4 });
+    }
+  }, [flyToCoords, map]);
+  return null;
+}
+
+function LocateControl({
+  onLocate,
+  onError,
+}: {
+  onLocate: (lat: number, lng: number) => void;
+  onError: (msg: string) => void;
+}) {
+  const map = useMap();
+  const [loading, setLoading] = useState(false);
+
+  const handleLocate = async () => {
+    setLoading(true);
+    try {
+      const coords = await getUserCoordinates();
+      map.flyTo([coords.lat, coords.lng], 16, { duration: 1.5 });
+      sendUserLocation(coords.lat, coords.lng);
+      onLocate(coords.lat, coords.lng);
+    } catch (err: any) {
+      onError(err.message || 'No pudimos acceder a tu ubicación GPS.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <Box sx={{ position: 'absolute', bottom: 24, right: 24, zIndex: 1000 }}>
-      <Tooltip title="Ubicarme con GPS">
-        <Fab color="primary" onClick={handleLocate} size="medium">
+    <Box sx={{ position: 'absolute', bottom: { xs: 85, sm: 28 }, right: { xs: 16, sm: 28 }, zIndex: 1000 }}>
+      <Tooltip title="Centrar en mi ubicación GPS">
+        <Fab
+          color="primary"
+          onClick={handleLocate}
+          size="medium"
+          disabled={loading}
+          sx={{
+            boxShadow: '0 4px 14px rgba(37, 99, 235, 0.45)',
+          }}
+        >
           <GpsIcon />
         </Fab>
       </Tooltip>
@@ -175,12 +246,36 @@ export const UbicaMap: React.FC<UbicaMapProps> = ({
   veterinaries = [],
   stores = [],
   onMapClick,
+  flyToCoords,
+  onUserLocationFound,
 }) => {
   const centerLat = -33.4489;
   const centerLng = -70.6693;
 
+  const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [gpsError, setGpsError] = useState<string | null>(null);
+
+  const handleLocationFound = (lat: number, lng: number) => {
+    setUserPos({ lat, lng });
+    onUserLocationFound?.(lat, lng);
+  };
+
   return (
     <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
+      {gpsError && (
+        <Snackbar
+          open={Boolean(gpsError)}
+          autoHideDuration={6000}
+          onClose={() => setGpsError(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+          sx={{ bottom: { xs: 90, sm: 40 } }}
+        >
+          <Alert severity="warning" onClose={() => setGpsError(null)} sx={{ borderRadius: 2 }}>
+            {gpsError}
+          </Alert>
+        </Snackbar>
+      )}
+
       <MapContainer
         center={[centerLat, centerLng]}
         zoom={13}
@@ -193,7 +288,24 @@ export const UbicaMap: React.FC<UbicaMapProps> = ({
         />
 
         <MapClickHandler onClick={onMapClick} />
-        <LocateControl />
+        <MapFlyController flyToCoords={flyToCoords} />
+        <LocateControl onLocate={handleLocationFound} onError={(msg) => setGpsError(msg)} />
+
+        {/* CURRENT USER GPS POSITION MARKER */}
+        {userPos && (
+          <Marker position={[userPos.lat, userPos.lng]} icon={createUserLocationIcon()}>
+            <Popup>
+              <Box p={0.5}>
+                <Typography variant="subtitle2" fontWeight="800" color="primary">
+                  📍 Tu Ubicación Actual
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  GPS activo ({userPos.lat.toFixed(4)}, {userPos.lng.toFixed(4)})
+                </Typography>
+              </Box>
+            </Popup>
+          </Marker>
+        )}
 
         {/* 1. LOST PETS WITH EXPANDING RADAR */}
         {lostPets.map((pet) => (
