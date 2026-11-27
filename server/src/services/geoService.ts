@@ -1,6 +1,20 @@
 import { Species, PetSize } from '../types/index.js';
 
 /**
+ * Validates geographical coordinate boundaries (-90 <= lat <= 90, -180 <= lng <= 180)
+ */
+export function isValidCoordinates(lat: number, lng: number): boolean {
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180
+  );
+}
+
+/**
  * Calculates distance between two coordinates in meters using the Haversine formula
  */
 export function calculateDistanceMeters(

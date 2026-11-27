@@ -5,18 +5,25 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "postinstall": "prisma generate",
+    "build": "prisma generate && tsc",
     "start": "node dist/index.js",
+    "db:push": "prisma db push",
+    "db:seed": "tsx src/services/seed.ts",
+    "db:import-json": "tsx src/services/seed.ts --import-json",
+    "db:studio": "prisma studio",
     "test": "vitest run src",
     "test:watch": "vitest src"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.3",
     "axios": "^1.7.9",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
+    "prisma": "^6.19.3",
     "socket.io": "^4.8.1",
     "stripe": "^17.5.0"
   },

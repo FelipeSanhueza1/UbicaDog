@@ -18,6 +18,8 @@ import subscriptionRoutes from './routes/subscriptionRoutes.js';
 import { authMiddleware } from './middleware/auth.js';
 import { initSocketService } from './services/socketService.js';
 import { handleStripeWebhook } from './controllers/stripeController.js';
+import { checkDatabaseHealth, prisma } from './services/prisma.js';
+import { ensureSeedData } from './services/seed.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -53,21 +55,40 @@ app.use('/api/veterinaries', veterinaryRoutes);
 app.use('/api/stores', storeRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ONLINE',
+app.get('/api/health', async (req, res) => {
+  const dbHealthy = await checkDatabaseHealth();
+  res.status(dbHealthy ? 200 : 503).json({
+    status: dbHealthy ? 'ONLINE' : 'DEGRADED',
     service: 'UbicaDog Backend Radar & Directory Engine',
+    database: dbHealthy ? 'POSTGRESQL_CONNECTED' : 'POSTGRESQL_DISCONNECTED',
     timestamp: new Date().toISOString(),
   });
 });
+
+async function bootstrapDatabase() {
+  if (!process.env.DATABASE_URL) {
+    console.error('❌ [Database] Variable DATABASE_URL no configurada. Define DATABASE_URL en .env o en Render.');
+    return;
+  }
+
+  try {
+    await prisma.$connect();
+    await ensureSeedData();
+    console.log('🗄️  [Database] PostgreSQL conectado y esquema sincronizado vía Prisma.');
+  } catch (err) {
+    console.error('❌ [Database] No se pudo conectar a PostgreSQL:', err);
+    console.error('💡 Sugerencia local: ejecuta "docker compose up -d" en la raíz del proyecto.');
+  }
+}
 
 server.listen(PORT, () => {
   console.log(`===============================================`);
   console.log(`🐾 UbicaDog Server running on port ${PORT}`);
   console.log(`🛰️  Real-time Radar Socket.io active`);
-  console.log(`🏥 Veterinary directory & rating sort active`);
+  console.log(`🏥 Veterinary directory & OSM GPS search active`);
   console.log(`🛍️  Pet Store B2B plans active ($5.000 / $10.000)`);
   console.log(`💳 Stripe Subscriptions active`);
   console.log(`🛡️  Admin portal endpoints mounted at /api/admin`);
   console.log(`===============================================`);
+  void bootstrapDatabase();
 });

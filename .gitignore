@@ -51,3 +51,6 @@ Thumbs.db
 .idea/
 *.sublime-project
 *.sublime-workspace
+
+# Legacy local runtime JSON data (migrated to PostgreSQL)
+server/data/*.json

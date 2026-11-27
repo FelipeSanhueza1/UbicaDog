@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
 import Stripe from 'stripe';
 import { AuthenticatedRequest } from '../middleware/auth.js';
-import { store } from '../services/store.js';
-import { SubscriptionTier, Subscription } from '../types/index.js';
+import { prisma } from '../services/prisma.js';
+import { SubscriptionTier } from '../types/index.js';
 
 const stripeSecret = process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder';
 const stripe = new Stripe(stripeSecret);
@@ -60,9 +60,9 @@ export async function createCheckoutSession(req: AuthenticatedRequest, res: Resp
     });
 
     return res.json({ sessionId: session.id, url: session.url });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Stripe error:', error);
-    return res.status(500).json({ error: 'Error al procesar pasarela Stripe.' });
+    return res.status(500).json({ code: 'INTERNAL_ERROR', error: 'Error al procesar pasarela Stripe.' });
   }
 }
 
@@ -85,58 +85,94 @@ export async function handleStripeWebhook(req: Request, res: Response) {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  // Handle specific Stripe events
-  switch (event.type) {
-    case 'checkout.session.completed': {
-      const session = event.data.object as Stripe.Checkout.Session;
-      const userId = session.metadata?.userId;
-      const tier = (session.metadata?.tier || session.metadata?.type) as SubscriptionTier;
+  try {
+    // Handle specific Stripe events
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const userId = session.metadata?.userId;
+        const tier = (session.metadata?.tier || session.metadata?.type) as SubscriptionTier;
 
-      if (userId && tier && ['pro_owner', 'store_basic', 'store_premium'].includes(tier)) {
-        const user = store.users.find((u) => u.id === userId);
-        if (user) {
-          user.subscriptionTier = tier;
-          const newSub: Subscription = {
-            id: `sub_${session.id}`,
-            userId: user.id,
-            tier,
-            status: 'active',
-            stripeSubscriptionId: typeof session.subscription === 'string' ? session.subscription : undefined,
-            currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-            priceClp: session.amount_total || (tier === 'pro_owner' ? 2990 : tier === 'store_basic' ? 5000 : 10000),
-          };
-          store.subscriptions.push(newSub);
-          store.save();
-          console.log(`✅ Suscripción activada vía Stripe para usuario ${user.email} -> ${tier}`);
+        if (userId && tier && ['pro_owner', 'store_basic', 'store_premium'].includes(tier)) {
+          const user = await prisma.user.findUnique({ where: { id: userId } });
+          if (user) {
+            const subRecordId = `sub_${session.id}`;
+            const periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+            const priceClp =
+              session.amount_total ||
+              (tier === 'pro_owner' ? 2990 : tier === 'store_basic' ? 5000 : 10000);
+
+            await prisma.$transaction([
+              prisma.user.update({
+                where: { id: user.id },
+                data: { subscriptionTier: tier },
+              }),
+              prisma.subscription.upsert({
+                where: { id: subRecordId },
+                update: {
+                  tier,
+                  status: 'active',
+                  currentPeriodEnd: periodEnd,
+                  priceClp,
+                },
+                create: {
+                  id: subRecordId,
+                  userId: user.id,
+                  tier,
+                  status: 'active',
+                  stripeSubscriptionId:
+                    typeof session.subscription === 'string' ? session.subscription : null,
+                  currentPeriodEnd: periodEnd,
+                  priceClp,
+                },
+              }),
+            ]);
+
+            console.log(`✅ Suscripción activada vía Stripe para usuario ${user.email} -> ${tier}`);
+          }
         }
+        break;
       }
-      break;
-    }
 
-    case 'customer.subscription.deleted': {
-      const subscription = event.data.object as Stripe.Subscription;
-      const subRecord = store.subscriptions.find((s) => s.stripeSubscriptionId === subscription.id);
-      if (subRecord) {
-        subRecord.status = 'canceled';
-        const user = store.users.find((u) => u.id === subRecord.userId);
-        if (user) {
-          user.subscriptionTier = 'free';
-          store.save();
-          console.log(`ℹ️ Suscripción cancelada vía Stripe para ${user.email}, revertido a Free`);
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object as Stripe.Subscription;
+        const subRecord = await prisma.subscription.findFirst({
+          where: { stripeSubscriptionId: subscription.id },
+        });
+        if (subRecord) {
+          const user = await prisma.user.findUnique({ where: { id: subRecord.userId } });
+          await prisma.$transaction([
+            prisma.subscription.update({
+              where: { id: subRecord.id },
+              data: { status: 'canceled' },
+            }),
+            ...(user
+              ? [
+                  prisma.user.update({
+                    where: { id: user.id },
+                    data: { subscriptionTier: 'free' },
+                  }),
+                ]
+              : []),
+          ]);
+          console.log(`ℹ️ Suscripción cancelada vía Stripe para ${user?.email || subRecord.userId}, revertido a Free`);
         }
+        break;
       }
-      break;
+
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object as Stripe.Invoice;
+        console.warn(`⚠️ Pago fallido para invoice ${invoice.id}, cliente: ${invoice.customer_email}`);
+        break;
+      }
+
+      default:
+        console.log(`ℹ️ Evento Stripe no manejado: ${event.type}`);
     }
 
-    case 'invoice.payment_failed': {
-      const invoice = event.data.object as Stripe.Invoice;
-      console.warn(`⚠️ Pago fallido para invoice ${invoice.id}, cliente: ${invoice.customer_email}`);
-      break;
-    }
-
-    default:
-      console.log(`ℹ️ Evento Stripe no manejado: ${event.type}`);
+    return res.json({ received: true });
+  } catch (error) {
+    console.error('Error processing Stripe webhook against database:', error);
+    return res.status(500).json({ code: 'INTERNAL_ERROR', error: 'Error interno al procesar webhook.' });
   }
-
-  return res.json({ received: true });
 }

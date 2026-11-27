@@ -1,8 +1,6 @@
-version: '3.8'
-
 services:
   postgres:
-    image: postgis/postgis:16-3.4
+    image: postgres:15.3
     container_name: ubicadog_db
     restart: always
     environment:

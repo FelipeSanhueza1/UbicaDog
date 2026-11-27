@@ -1,14 +1,16 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { store } from '../services/store.js';
+import { prisma } from '../services/prisma.js';
+import { mapUser, sanitizeUser } from '../services/dbMappers.js';
+import { isValidCoordinates } from '../services/geoService.js';
 import { AuthenticatedRequest } from '../middleware/auth.js';
-import { User, Role } from '../types/index.js';
+import { User } from '../types/index.js';
 import { sendWelcomeEmail } from '../services/emailService.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'ubicadog_super_secret_jwt_key_2025_secure';
 
-function generateToken(user: User): string {
+function generateToken(user: Pick<User, 'id' | 'email' | 'role' | 'name'>): string {
   return jwt.sign(
     {
       id: user.id,
@@ -26,29 +28,33 @@ export async function register(req: Request, res: Response) {
     const { email, password, name, phone } = req.body;
 
     if (!email || !password || !name) {
-      return res.status(400).json({ error: 'Todos los campos obligatorios deben completarse.' });
+      return res.status(400).json({ code: 'MISSING_FIELDS', error: 'Todos los campos obligatorios deben completarse.' });
     }
 
-    const existingUser = store.users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const existingUser = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
     if (existingUser) {
-      return res.status(409).json({ error: 'Ya existe una cuenta registrada con este correo electrónico.' });
+      return res.status(409).json({ code: 'EMAIL_EXISTS', error: 'Ya existe una cuenta registrada con este correo electrónico.' });
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
-    const newUser: User = {
-      id: `usr_${Date.now()}`,
-      email: email.toLowerCase(),
-      password: passwordHash,
-      name,
-      phone,
-      role: 'user',
-      subscriptionTier: 'free',
-      avatarUrl: `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(name)}`,
-      createdAt: new Date().toISOString(),
-    };
+    const passwordHash = await bcrypt.hash(String(password), 10);
+    const createdRow = await prisma.user.create({
+      data: {
+        id: `usr_${Date.now()}`,
+        email: normalizedEmail,
+        password: passwordHash,
+        name: String(name).trim(),
+        phone: phone ? String(phone).trim() : null,
+        role: 'user',
+        subscriptionTier: 'free',
+        avatarUrl: `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(String(name).trim())}`,
+      },
+    });
 
-    store.users.push(newUser);
-    store.save();
+    const newUser = mapUser(createdRow);
 
     // Send welcome & confirmation email asynchronously (does not block response)
     sendWelcomeEmail(newUser.email, newUser.name).catch((err) => {
@@ -56,15 +62,15 @@ export async function register(req: Request, res: Response) {
     });
 
     const token = generateToken(newUser);
-    const { password: _, ...userWithoutPassword } = newUser;
 
     return res.status(201).json({
       message: 'Usuario registrado exitosamente en UbicaDog.',
-      user: userWithoutPassword,
+      user: sanitizeUser(newUser),
       token,
     });
   } catch (error) {
-    return res.status(500).json({ error: 'Error interno en el servidor.' });
+    console.error('Register error:', error);
+    return res.status(500).json({ code: 'INTERNAL_ERROR', error: 'Error interno en el servidor.' });
   }
 }
 
@@ -73,64 +79,72 @@ export async function login(req: Request, res: Response) {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ error: 'Correo y contraseña son requeridos.' });
+      return res.status(400).json({ code: 'MISSING_FIELDS', error: 'Correo y contraseña son requeridos.' });
     }
 
-    const user = store.users.find((u) => u.email.toLowerCase() === email.toLowerCase());
-    if (!user || !user.password) {
-      return res.status(401).json({ error: 'Credenciales inválidas.' });
+    const userRow = await prisma.user.findFirst({
+      where: { email: { equals: String(email).trim(), mode: 'insensitive' } },
+    });
+
+    if (!userRow || !userRow.password) {
+      return res.status(401).json({ code: 'INVALID_CREDENTIALS', error: 'Credenciales inválidas.' });
     }
 
-    const isValid = await bcrypt.compare(password, user.password);
+    const isValid = await bcrypt.compare(String(password), userRow.password);
     if (!isValid) {
-      return res.status(401).json({ error: 'Credenciales inválidas.' });
+      return res.status(401).json({ code: 'INVALID_CREDENTIALS', error: 'Credenciales inválidas.' });
     }
 
+    const user = mapUser(userRow);
     const token = generateToken(user);
-    const { password: _, ...userWithoutPassword } = user;
 
     return res.json({
       message: 'Inicio de sesión exitoso.',
-      user: userWithoutPassword,
+      user: sanitizeUser(user),
       token,
     });
   } catch (error) {
-    return res.status(500).json({ error: 'Error al iniciar sesión.' });
+    console.error('Login error:', error);
+    return res.status(500).json({ code: 'INTERNAL_ERROR', error: 'Error al iniciar sesión.' });
   }
 }
 
 export async function employeeLogin(req: Request, res: Response) {
   try {
-    const { email, password, employeeCode } = req.body;
+    const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ error: 'Credenciales de empleado incompletas.' });
+      return res.status(400).json({ code: 'MISSING_FIELDS', error: 'Credenciales de empleado incompletas.' });
     }
 
-    const user = store.users.find((u) => u.email.toLowerCase() === email.toLowerCase());
-    if (!user || !user.password) {
-      return res.status(401).json({ error: 'Acceso denegado: Empleado no registrado en el sistema.' });
+    const userRow = await prisma.user.findFirst({
+      where: { email: { equals: String(email).trim(), mode: 'insensitive' } },
+    });
+
+    if (!userRow || !userRow.password) {
+      return res.status(401).json({ code: 'INVALID_CREDENTIALS', error: 'Acceso denegado: Empleado no registrado en el sistema.' });
     }
 
-    if (user.role !== 'employee' && user.role !== 'admin') {
-      return res.status(403).json({ error: 'Esta cuenta no posee rango de empleado o administrador corporativo.' });
+    if (userRow.role !== 'employee' && userRow.role !== 'admin') {
+      return res.status(403).json({ code: 'FORBIDDEN', error: 'Esta cuenta no posee rango de empleado o administrador corporativo.' });
     }
 
-    const isValid = await bcrypt.compare(password, user.password);
+    const isValid = await bcrypt.compare(String(password), userRow.password);
     if (!isValid) {
-      return res.status(401).json({ error: 'Credenciales corporativas inválidas.' });
+      return res.status(401).json({ code: 'INVALID_CREDENTIALS', error: 'Credenciales corporativas inválidas.' });
     }
 
+    const user = mapUser(userRow);
     const token = generateToken(user);
-    const { password: _, ...userWithoutPassword } = user;
 
     return res.json({
       message: 'Autenticación corporativa autorizada.',
-      user: userWithoutPassword,
+      user: sanitizeUser(user),
       token,
     });
   } catch (error) {
-    return res.status(500).json({ error: 'Error en acceso corporativo.' });
+    console.error('Employee login error:', error);
+    return res.status(500).json({ code: 'INTERNAL_ERROR', error: 'Error en acceso corporativo.' });
   }
 }
 
@@ -139,56 +153,61 @@ export async function googleLogin(req: Request, res: Response) {
     const { email, name, avatarUrl, googleId } = req.body;
 
     if (!email) {
-      return res.status(400).json({ error: 'Datos de Google incompletos.' });
+      return res.status(400).json({ code: 'MISSING_FIELDS', error: 'Datos de Google incompletos.' });
     }
 
-    let user = store.users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+    const normalizedEmail = String(email).trim().toLowerCase();
+    let userRow = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
 
-    if (!user) {
-      // Register through Google
-      user = {
-        id: `usr_g_${Date.now()}`,
-        email: email.toLowerCase(),
-        name: name || 'Usuario Google',
-        avatarUrl: avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=256&q=80',
-        googleId,
-        role: 'user',
-        subscriptionTier: 'free',
-        createdAt: new Date().toISOString(),
-      };
-      store.users.push(user);
-    } else {
-      if (googleId) user.googleId = googleId;
-      if (avatarUrl && !user.avatarUrl) user.avatarUrl = avatarUrl;
+    if (!userRow) {
+      userRow = await prisma.user.create({
+        data: {
+          id: `usr_g_${Date.now()}`,
+          email: normalizedEmail,
+          name: name || 'Usuario Google',
+          avatarUrl: avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=256&q=80',
+          googleId: googleId ?? null,
+          role: 'user',
+          subscriptionTier: 'free',
+        },
+      });
+    } else if (googleId || (avatarUrl && !userRow.avatarUrl)) {
+      userRow = await prisma.user.update({
+        where: { id: userRow.id },
+        data: {
+          googleId: googleId ?? userRow.googleId,
+          avatarUrl: !userRow.avatarUrl && avatarUrl ? avatarUrl : userRow.avatarUrl,
+        },
+      });
     }
 
-    store.save();
-
+    const user = mapUser(userRow);
     const token = generateToken(user);
-    const { password: _, ...userWithoutPassword } = user;
 
     return res.json({
       message: 'Autenticación con Google exitosa.',
-      user: userWithoutPassword,
+      user: sanitizeUser(user),
       token,
     });
   } catch (error) {
-    return res.status(500).json({ error: 'Error al procesar login con Google.' });
+    console.error('Google login error:', error);
+    return res.status(500).json({ code: 'INTERNAL_ERROR', error: 'Error al procesar login con Google.' });
   }
 }
 
 export function getProfile(req: AuthenticatedRequest, res: Response) {
   if (!req.user) {
-    return res.status(401).json({ error: 'No autenticado.' });
+    return res.status(401).json({ code: 'UNAUTHORIZED', error: 'No autenticado.' });
   }
-  const { password: _, ...userWithoutPassword } = req.user;
-  return res.json({ user: userWithoutPassword });
+  return res.json({ user: sanitizeUser(req.user) });
 }
 
 export async function updateProfile(req: AuthenticatedRequest, res: Response) {
   try {
     if (!req.user) {
-      return res.status(401).json({ error: 'No autenticado.' });
+      return res.status(401).json({ code: 'UNAUTHORIZED', error: 'No autenticado.' });
     }
 
     const {
@@ -203,61 +222,91 @@ export async function updateProfile(req: AuthenticatedRequest, res: Response) {
       newPassword,
     } = req.body;
 
-    const user = store.users.find((u) => u.id === req.user?.id);
-    if (!user) {
-      return res.status(404).json({ error: 'Usuario no encontrado en la base de datos.' });
+    const currentRow = await prisma.user.findUnique({
+      where: { id: req.user.id },
+    });
+
+    if (!currentRow) {
+      return res.status(404).json({ code: 'NOT_FOUND', error: 'Usuario no encontrado en la base de datos.' });
     }
 
+    const updateData: {
+      email?: string;
+      password?: string;
+      name?: string;
+      phone?: string | null;
+      avatarUrl?: string;
+      homeAddress?: string | null;
+      homeLatitude?: number | null;
+      homeLongitude?: number | null;
+    } = {};
+
     // Handle email change if requested
-    if (email && email.trim().toLowerCase() !== user.email.toLowerCase()) {
+    if (email && String(email).trim().toLowerCase() !== currentRow.email.toLowerCase()) {
+      const normalizedEmail = String(email).trim().toLowerCase();
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email.trim())) {
-        return res.status(400).json({ error: 'El formato de correo electrónico no es válido.' });
+      if (!emailRegex.test(normalizedEmail)) {
+        return res.status(400).json({ code: 'INVALID_EMAIL', error: 'El formato de correo electrónico no es válido.' });
       }
-      const existingUser = store.users.find(
-        (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.id !== user.id
-      );
+      const existingUser = await prisma.user.findFirst({
+        where: {
+          email: normalizedEmail,
+          id: { not: currentRow.id },
+        },
+      });
       if (existingUser) {
-        return res.status(409).json({ error: 'Ese correo electrónico ya está registrado por otra cuenta.' });
+        return res.status(409).json({ code: 'EMAIL_EXISTS', error: 'Ese correo electrónico ya está registrado por otra cuenta.' });
       }
-      user.email = email.trim().toLowerCase();
+      updateData.email = normalizedEmail;
     }
 
     // Handle password change if requested
     if (newPassword) {
       if (!currentPassword) {
-        return res.status(400).json({ error: 'Debes ingresar tu contraseña actual para cambiarla.' });
+        return res.status(400).json({ code: 'MISSING_FIELDS', error: 'Debes ingresar tu contraseña actual para cambiarla.' });
       }
-      if (user.password) {
-        const isMatch = await bcrypt.compare(currentPassword, user.password);
+      if (currentRow.password) {
+        const isMatch = await bcrypt.compare(String(currentPassword), currentRow.password);
         if (!isMatch) {
-          return res.status(400).json({ error: 'La contraseña actual ingresada es incorrecta.' });
+          return res.status(400).json({ code: 'INVALID_PASSWORD', error: 'La contraseña actual ingresada es incorrecta.' });
         }
       }
-      if (newPassword.length < 6) {
-        return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres.' });
+      if (String(newPassword).length < 6) {
+        return res.status(400).json({ code: 'WEAK_PASSWORD', error: 'La nueva contraseña debe tener al menos 6 caracteres.' });
       }
-      user.password = await bcrypt.hash(newPassword, 10);
+      updateData.password = await bcrypt.hash(String(newPassword), 10);
     }
 
-    if (name) user.name = name.trim();
-    if (phone !== undefined) user.phone = phone.trim();
-    if (avatarUrl) user.avatarUrl = avatarUrl;
-    if (homeAddress !== undefined) user.homeAddress = homeAddress;
-    if (homeLatitude !== undefined) user.homeLatitude = Number(homeLatitude);
-    if (homeLongitude !== undefined) user.homeLongitude = Number(homeLongitude);
+    if (homeLatitude !== undefined || homeLongitude !== undefined) {
+      const latNum = homeLatitude !== undefined && homeLatitude !== null ? Number(homeLatitude) : currentRow.homeLatitude;
+      const lngNum = homeLongitude !== undefined && homeLongitude !== null ? Number(homeLongitude) : currentRow.homeLongitude;
+      if (latNum !== null && lngNum !== null && !isValidCoordinates(latNum, lngNum)) {
+        return res.status(400).json({ code: 'INVALID_COORDINATES', error: 'Coordenadas de hogar fuera de rango válido.' });
+      }
+      if (homeLatitude !== undefined) updateData.homeLatitude = homeLatitude === null ? null : Number(homeLatitude);
+      if (homeLongitude !== undefined) updateData.homeLongitude = homeLongitude === null ? null : Number(homeLongitude);
+    }
 
-    store.save();
+    if (name) updateData.name = String(name).trim();
+    if (phone !== undefined) updateData.phone = phone ? String(phone).trim() : null;
+    if (avatarUrl) updateData.avatarUrl = String(avatarUrl);
+    if (homeAddress !== undefined) updateData.homeAddress = homeAddress ? String(homeAddress) : null;
 
+    const updatedRow = await prisma.user.update({
+      where: { id: currentRow.id },
+      data: updateData,
+    });
+
+    const user = mapUser(updatedRow);
     const token = generateToken(user);
-    const { password: _, ...userWithoutPassword } = user;
 
     return res.json({
       message: 'Perfil de usuario actualizado exitosamente.',
-      user: userWithoutPassword,
+      user: sanitizeUser(user),
       token,
     });
   } catch (error) {
-    return res.status(500).json({ error: 'Error al actualizar el perfil de usuario.' });
+    console.error('Update profile error:', error);
+    return res.status(500).json({ code: 'INTERNAL_ERROR', error: 'Error al actualizar el perfil de usuario.' });
   }
 }

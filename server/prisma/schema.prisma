@@ -1,5 +1,4 @@
-// This is your Prisma schema file for UbicaDog Enterprise Database
-// PostgreSQL with PostGIS extension for enterprise geospatial indexing (GIST)
+// Prisma schema for UbicaDog Database (PostgreSQL / Supabase / Local Docker)
 
 datasource db {
   provider = "postgresql"
@@ -11,47 +10,47 @@ generator client {
 }
 
 enum Role {
-  USER
-  EMPLOYEE
-  ADMIN
+  user
+  employee
+  admin
 }
 
 enum Species {
-  DOG
-  CAT
-  OTHER
+  dog
+  cat
+  other
 }
 
 enum PetSize {
-  SMALL
-  MEDIUM
-  LARGE
+  small
+  medium
+  large
 }
 
 enum CollarStatus {
-  WITH_COLLAR
-  NO_COLLAR
-  UNKNOWN
+  with_collar
+  no_collar
+  unknown
 }
 
 enum AnimalCondition {
-  HEALTHY
-  INJURED
-  SCARED
-  WANDERING
+  healthy
+  injured
+  scared
+  wandering
 }
 
 enum SightingStatus {
-  ACTIVE
-  RESOLVED
-  HIDDEN
+  active
+  resolved
+  hidden
 }
 
 enum SubscriptionTier {
-  FREE
-  PRO_OWNER
-  STORE_BASIC
-  STORE_PREMIUM
+  free
+  pro_owner
+  store_basic
+  store_premium
 }
 
 model User {
@@ -59,11 +58,14 @@ model User {
   email            String           @unique
   password         String?
   name             String
-  role             Role             @default(USER)
+  role             Role             @default(user)
   phone            String?
   avatarUrl        String?
+  homeAddress      String?
+  homeLatitude     Float?
+  homeLongitude    Float?
   googleId         String?          @unique
-  subscriptionTier SubscriptionTier @default(FREE)
+  subscriptionTier SubscriptionTier @default(free)
   pets             Pet[]
   sightings        Sighting[]
   stores           PetStore[]
@@ -78,7 +80,7 @@ model Subscription {
   id                   String           @id @default(uuid())
   userId               String
   user                 User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tier                 SubscriptionTier @default(FREE)
+  tier                 SubscriptionTier @default(free)
   status               String           @default("active")
   stripeSubscriptionId String?
   currentPeriodEnd     DateTime
@@ -87,34 +89,39 @@ model Subscription {
   updatedAt            DateTime         @updatedAt
 
   @@index([userId])
+  @@index([stripeSubscriptionId])
 }
 
 model Pet {
-  id              String    @id @default(uuid())
-  ownerId         String
-  owner           User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  name            String
-  species         Species   @default(DOG)
-  breed           String
-  age             Int?
-  size            PetSize   @default(MEDIUM)
-  color           String
-  microchipNumber String?   @unique
-  collarDetails   String?
-  photoUrl        String
-  homeLatitude    Float
-  homeLongitude   Float
-  homeAddress     String
-  isLost          Boolean   @default(false)
-  lostSince       DateTime?
-  description     String?
-  rewardAmount    Float?
-  qrCodeUrl       String?
-  vaccines        String[]  @default([])
-  allergies       String?
-  sterilized      Boolean   @default(false)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                String    @id @default(uuid())
+  ownerId           String
+  owner             User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name              String
+  species           Species   @default(dog)
+  breed             String
+  age               Int?
+  size              PetSize   @default(medium)
+  color             String
+  microchipNumber   String?   @unique
+  collarDetails     String?
+  photoUrl          String
+  homeLatitude      Float
+  homeLongitude     Float
+  homeAddress       String
+  isLost            Boolean   @default(false)
+  lostSince         DateTime?
+  lastSeenLatitude  Float?
+  lastSeenLongitude Float?
+  description       String?
+  rewardAmount      Float?
+  qrCodeUrl         String?
+  hasPurchasedPlate Boolean   @default(false)
+  vaccines          String[]  @default([])
+  allergies         String?
+  sterilized        Boolean   @default(false)
+  medicalNotes      String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@index([ownerId])
   @@index([isLost])
@@ -125,10 +132,10 @@ model Sighting {
   reporterId   String?
   reporter     User?           @relation(fields: [reporterId], references: [id], onDelete: SetNull)
   reporterName String?
-  species      Species         @default(DOG)
+  species      Species         @default(dog)
   breed        String?
-  collarStatus CollarStatus    @default(UNKNOWN)
-  condition    AnimalCondition @default(WANDERING)
+  collarStatus CollarStatus    @default(unknown)
+  condition    AnimalCondition @default(wandering)
   photoUrl     String
   latitude     Float
   longitude    Float
@@ -136,7 +143,7 @@ model Sighting {
   seenAt       DateTime        @default(now())
   notes        String?
   contactPhone String?
-  status       SightingStatus  @default(ACTIVE)
+  status       SightingStatus  @default(active)
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
@@ -170,7 +177,7 @@ model PetStore {
   ownerId      String?
   owner        User?            @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   businessName String
-  tier         SubscriptionTier @default(STORE_BASIC)
+  tier         SubscriptionTier @default(store_basic)
   address      String
   latitude     Float
   longitude    Float
@@ -181,6 +188,8 @@ model PetStore {
   description  String
   openingHours String
   websiteUrl   String?
+  catalog      Json             @default("[]")
+  promotions   Json             @default("[]")
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 

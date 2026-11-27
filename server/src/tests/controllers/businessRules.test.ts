@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { store } from '../../services/store.js';
-import { calculateDistanceMeters } from '../../services/geoService.js';
+import { DEFAULT_STORES } from '../../services/seed.js';
+import { calculateDistanceMeters, isValidCoordinates } from '../../services/geoService.js';
 
 describe('Business Rules & Domain Invariants', () => {
   describe('Veterinary Ranking Algorithm (Rating + Distance desempate)', () => {
@@ -27,10 +27,8 @@ describe('Business Rules & Domain Invariants', () => {
           return b.reviewCount - a.reviewCount;
         });
 
-      // Highest rated clinic with highest review count should be first
       expect(sortedVets[0].id).toBe('v3');
       expect(sortedVets[0].rating).toBeGreaterThanOrEqual(sortedVets[1].rating);
-      // Last clinic should have the lowest rating
       expect(sortedVets[sortedVets.length - 1].rating).toBe(3.8);
     });
 
@@ -48,7 +46,7 @@ describe('Business Rules & Domain Invariants', () => {
     });
   });
 
-  describe('Freemium Subscription Limits', () => {
+  describe('Freemium Subscription Limits & Coordinate Validation', () => {
     it('should define that free tier users cannot register more than 1 pet', () => {
       const freeTierMaxPets = 1;
       const userPets = [{ id: 'pet_1', name: 'Rocky' }];
@@ -62,20 +60,16 @@ describe('Business Rules & Domain Invariants', () => {
     });
 
     it('should validate geographical boundaries (-90 <= lat <= 90 and -180 <= lng <= 180)', () => {
-      const isValidCoord = (lat: number, lng: number) =>
-        !isNaN(lat) && lat >= -90 && lat <= 90 && !isNaN(lng) && lng >= -180 && lng <= 180;
-
-      expect(isValidCoord(-33.4489, -70.6693)).toBe(true); // Santiago, Chile
-      expect(isValidCoord(95.0, -70.6693)).toBe(false); // Invalid latitude
-      expect(isValidCoord(-33.4489, 195.0)).toBe(false); // Invalid longitude
-      expect(isValidCoord(NaN, -70.6693)).toBe(false);
+      expect(isValidCoordinates(-33.4489, -70.6693)).toBe(true); // Santiago, Chile
+      expect(isValidCoordinates(95.0, -70.6693)).toBe(false); // Invalid latitude
+      expect(isValidCoordinates(-33.4489, 195.0)).toBe(false); // Invalid longitude
+      expect(isValidCoordinates(NaN, -70.6693)).toBe(false);
     });
   });
 
   describe('Pet Store Tier Restrictions ($5.000 vs $10.000 CLP)', () => {
     it('basic store ($5.000) should cap catalog to 5 items and forbid promo coupons', () => {
       const rawCatalog = [1, 2, 3, 4, 5, 6, 7];
-      const rawPromotions = [{ code: 'PROMO10' }];
 
       const basicTierCatalog = rawCatalog.slice(0, 5);
       const basicTierPromotions: any[] = [];
@@ -84,20 +78,21 @@ describe('Business Rules & Domain Invariants', () => {
       expect(basicTierPromotions.length).toBe(0);
     });
 
-    it('premium store ($10.000) should allow promoted status, unlimited catalog and coupons', () => {
-      const premiumStore = store.stores.find((s) => s.tier === 'store_premium');
+    it('premium store ($10.000) seed data should include promoted status, catalog and coupons', () => {
+      const premiumStore = DEFAULT_STORES.find((s) => s.tier === 'store_premium');
       expect(premiumStore).toBeDefined();
       expect(premiumStore?.promotions.length).toBeGreaterThan(0);
     });
   });
 
   describe('Physical Security Domain Invariants (QR Collar Pass Monetization)', () => {
-    it('should restrict official high-resolution printable pass to paid subscribers or admins', () => {
-      const canDownloadPrintablePass = (tier: string, role: string) => {
-        return (tier && tier !== 'free') || role === 'admin';
+    it('should restrict official high-resolution printable pass to paid subscribers, plate buyers or admins', () => {
+      const canDownloadPrintablePass = (tier: string, role: string, hasPurchasedPlate = false) => {
+        return Boolean((tier && tier !== 'free') || role === 'admin' || hasPurchasedPlate);
       };
 
-      expect(canDownloadPrintablePass('free', 'user')).toBe(false);
+      expect(canDownloadPrintablePass('free', 'user', false)).toBe(false);
+      expect(canDownloadPrintablePass('free', 'user', true)).toBe(true);
       expect(canDownloadPrintablePass('pro_owner', 'user')).toBe(true);
       expect(canDownloadPrintablePass('store_premium', 'user')).toBe(true);
       expect(canDownloadPrintablePass('free', 'admin')).toBe(true);

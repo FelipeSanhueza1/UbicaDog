@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthenticatedRequest } from '../middleware/auth.js';
-import { store } from '../services/store.js';
+import { prisma } from '../services/prisma.js';
+import { mapSubscription, mapUser, sanitizeUser } from '../services/dbMappers.js';
 import { SubscriptionTier } from '../types/index.js';
 
 export const PLANS_CONFIG = [
@@ -70,54 +71,69 @@ export function getPlans(req: AuthenticatedRequest, res: Response) {
   return res.json({ plans: PLANS_CONFIG });
 }
 
-export function getMySubscription(req: AuthenticatedRequest, res: Response) {
-  if (!req.user) return res.status(401).json({ error: 'No autenticado.' });
+export async function getMySubscription(req: AuthenticatedRequest, res: Response) {
+  if (!req.user) return res.status(401).json({ code: 'UNAUTHORIZED', error: 'No autenticado.' });
 
-  const currentTier = req.user.subscriptionTier || 'free';
-  const planInfo = PLANS_CONFIG.find((p) => p.id === currentTier) || PLANS_CONFIG[0];
-  const petCount = store.pets.filter((p) => p.ownerId === req.user?.id).length;
+  try {
+    const currentTier = req.user.subscriptionTier || 'free';
+    const planInfo = PLANS_CONFIG.find((p) => p.id === currentTier) || PLANS_CONFIG[0];
+    const petCount = await prisma.pet.count({
+      where: { ownerId: req.user.id },
+    });
 
-  return res.json({
-    subscription: {
-      tier: currentTier,
-      plan: planInfo,
-      currentPetCount: petCount,
-      canAddMorePets: currentTier !== 'free' || petCount < 1,
-      maxAllowedPets: planInfo.maxPets,
-    },
-  });
+    return res.json({
+      subscription: {
+        tier: currentTier,
+        plan: planInfo,
+        currentPetCount: petCount,
+        canAddMorePets: currentTier !== 'free' || petCount < 1,
+        maxAllowedPets: planInfo.maxPets,
+      },
+    });
+  } catch (error) {
+    console.error('getMySubscription error:', error);
+    return res.status(500).json({ code: 'INTERNAL_ERROR', error: 'Error al consultar suscripción.' });
+  }
 }
 
-export function subscribeToPlan(req: AuthenticatedRequest, res: Response) {
-  if (!req.user) return res.status(401).json({ error: 'No autenticado.' });
+export async function subscribeToPlan(req: AuthenticatedRequest, res: Response) {
+  if (!req.user) return res.status(401).json({ code: 'UNAUTHORIZED', error: 'No autenticado.' });
 
-  const { tier } = req.body;
-  const validTiers: SubscriptionTier[] = ['free', 'pro_owner', 'store_basic', 'store_premium'];
+  try {
+    const { tier } = req.body;
+    const validTiers: SubscriptionTier[] = ['free', 'pro_owner', 'store_basic', 'store_premium'];
 
-  if (!validTiers.includes(tier)) {
-    return res.status(400).json({ error: 'Plan de suscripción no válido.' });
+    if (!validTiers.includes(tier)) {
+      return res.status(400).json({ code: 'INVALID_PLAN', error: 'Plan de suscripción no válido.' });
+    }
+
+    const plan = PLANS_CONFIG.find((p) => p.id === tier);
+    const periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    const [updatedUserRow, createdSubRow] = await prisma.$transaction([
+      prisma.user.update({
+        where: { id: req.user.id },
+        data: { subscriptionTier: tier },
+      }),
+      prisma.subscription.create({
+        data: {
+          id: `sub_${Date.now()}`,
+          userId: req.user.id,
+          tier,
+          status: 'active',
+          currentPeriodEnd: periodEnd,
+          priceClp: plan?.priceClp || 0,
+        },
+      }),
+    ]);
+
+    return res.json({
+      message: `¡Suscripción actualizada exitosamente a ${plan?.name}!`,
+      subscription: mapSubscription(createdSubRow),
+      user: sanitizeUser(mapUser(updatedUserRow)),
+    });
+  } catch (error) {
+    console.error('subscribeToPlan error:', error);
+    return res.status(500).json({ code: 'INTERNAL_ERROR', error: 'Error al actualizar la suscripción.' });
   }
-
-  // Update user's subscription
-  req.user.subscriptionTier = tier;
-
-  // Record subscription transaction
-  const plan = PLANS_CONFIG.find((p) => p.id === tier);
-  const newSub = {
-    id: `sub_${Date.now()}`,
-    userId: req.user.id,
-    tier,
-    status: 'active' as const,
-    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    priceClp: plan?.priceClp || 0,
-  };
-
-  store.subscriptions.push(newSub);
-  store.save();
-
-  return res.json({
-    message: `¡Suscripción actualizada exitosamente a ${plan?.name}!`,
-    subscription: newSub,
-    user: req.user,
-  });
 }

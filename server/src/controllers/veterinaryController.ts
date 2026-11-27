@@ -1,19 +1,20 @@
 import { Request, Response } from 'express';
-import { store } from '../services/store.js';
-import { calculateDistanceMeters } from '../services/geoService.js';
+import { prisma } from '../services/prisma.js';
+import { mapVeterinary } from '../services/dbMappers.js';
+import { calculateDistanceMeters, isValidCoordinates } from '../services/geoService.js';
 import { fetchOsmVeterinaries } from '../services/osmService.js';
 
 /**
  * Controller for Veterinary Directory
  * Dynamically queries real OpenStreetMap clinics around user coordinates,
- * merged with registered partner clinics and sorted by rating or distance.
+ * merged with registered partner clinics from PostgreSQL and sorted by rating or distance.
  */
 export async function getNearbyVeterinaries(req: Request, res: Response) {
   try {
     const lat = req.query.lat ? Number(req.query.lat) : -33.4489;
     const lng = req.query.lng ? Number(req.query.lng) : -70.6693;
 
-    if (isNaN(lat) || lat < -90 || lat > 90 || isNaN(lng) || lng < -180 || lng > 180) {
+    if (!isValidCoordinates(lat, lng)) {
       return res.status(400).json({ code: 'INVALID_COORDINATES', error: 'Coordenadas de usuario fuera de rango válido.' });
     }
 
@@ -21,12 +22,16 @@ export async function getNearbyVeterinaries(req: Request, res: Response) {
     const onlyEmergency24h = req.query.onlyEmergency24h === 'true';
     const sortBy = (req.query.sortBy as string) || 'distance'; // Default to closest clinics
 
-    // 1. Fetch real clinics from OpenStreetMap around the actual GPS coordinates
-    const osmClinics = await fetchOsmVeterinaries(lat, lng, radiusMeters);
+    // 1. Fetch real clinics from OpenStreetMap + partner clinics from PostgreSQL in parallel
+    const [osmClinics, dbVetRows] = await Promise.all([
+      fetchOsmVeterinaries(lat, lng, radiusMeters),
+      prisma.veterinary.findMany(),
+    ]);
 
-    // 2. Fetch locally stored partner clinics and calculate distance
-    const localClinics = store.veterinaries
-      .map((v) => {
+    // 2. Calculate distance for registered partner clinics
+    const localClinics = dbVetRows
+      .map((row) => {
+        const v = mapVeterinary(row);
         const distance = calculateDistanceMeters(lat, lng, v.latitude, v.longitude);
         return {
           ...v,
@@ -70,6 +75,7 @@ export async function getNearbyVeterinaries(req: Request, res: Response) {
       veterinaries: result,
     });
   } catch (error) {
-    return res.status(500).json({ error: 'Error al consultar clínicas veterinarias.' });
+    console.error('getNearbyVeterinaries error:', error);
+    return res.status(500).json({ code: 'INTERNAL_ERROR', error: 'Error al consultar clínicas veterinarias.' });
   }
 }
